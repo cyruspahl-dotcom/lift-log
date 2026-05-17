@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Lift Log">
@@ -18,7 +19,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel" data-presets="react">
+  <script type="text/babel">
 const { useState, useEffect, useCallback } = React;
 
 // --- STORAGE ------------------------------------------------------------------
@@ -634,7 +635,7 @@ function EquipChips({ selected, onChange, small }) {
 }
 
 // --- MAIN APP -----------------------------------------------------------------
-export default function App() {
+function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [sessions, setSessions] = useState([]);
   const [goals, setGoals] = useState(DEFAULT_GOAL);
