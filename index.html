@@ -21,7 +21,7 @@
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback } = React;
 
-// ─── STORAGE ──────────────────────────────────────────────────────────────────
+// --- STORAGE ------------------------------------------------------------------
 async function storageGet(key) {
   try { const val = localStorage.getItem(key); return val ? JSON.parse(val) : null; }
   catch { return null; }
@@ -31,7 +31,7 @@ async function storageSet(key, value) {
   catch (err) { console.error(err); }
 }
 
-// ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
+// --- DESIGN TOKENS ------------------------------------------------------------
 const BLUE    = "#2B7EC1";
 const BLUEDARK= "#1A5A94";
 const GREEN   = "#27A866";
@@ -51,7 +51,7 @@ const SKY      = "#EAE8E2";   // slightly darker warm for alternates
 const FOG      = "#F7F5F0";
 const MIST     = "#E0DDD6";
 
-// 5-level volume colours (low → high)
+// 5-level volume colours (low to high)
 const VOL_NONE   = "#E8E5DF";  // empty grey-warm
 const VOL_LOW    = "#F4A28C";  // light coral
 const VOL_MED    = "#F0C060";  // yellow-amber
@@ -70,7 +70,7 @@ const GLOBAL_CSS = `
   input[type=number] { -moz-appearance: textfield; }
 `;
 
-// ─── MUSCLE GROUPS ────────────────────────────────────────────────────────────
+// --- MUSCLE GROUPS ------------------------------------------------------------
 const MUSCLES = ["chest","back","lowerback","traps","shoulders","biceps","triceps","quads","hamstrings","glutes"];
 const MUSCLE_LABEL = {
   chest:"Chest", back:"Back", lowerback:"Lower Back", traps:"Traps",
@@ -121,8 +121,8 @@ const MUSCLE_MAP = {
   "Leg Raises":            { lowerback:0.2 },
 };
 
-// ─── 1RM HELPERS ─────────────────────────────────────────────────────────────
-// These exercises use a single dumbbell per hand — weight shown = per hand, total = ×2
+// --- 1RM HELPERS -------------------------------------------------------------
+// These exercises use a single dumbbell per hand - weight shown = per hand, total = x2
 // But ONLY when equipment is DB. If done with barbell, weight is already total.
 const DB_BILATERAL_EXERCISES = new Set([
   "Bicep Curls","Incline Bench Press","Shoulder Press","Dumbbell Lunges",
@@ -150,7 +150,7 @@ function getBest1RM(sets, exerciseName, bodyweightKg, equipment) {
   return Math.max(0, ...sets.map(setItem => calc1RM(setItem.weight || 0, setItem.reps || 0, exerciseName, bodyweightKg, equipment)));
 }
 
-// ─── DATE / WEEK HELPERS ─────────────────────────────────────────────────────
+// --- DATE / WEEK HELPERS -----------------------------------------------------
 function getWeekStart(dateStr) {
   const date = new Date(dateStr);
   const day = date.getDay();
@@ -193,7 +193,7 @@ function calcWeekVolume(sessions, weekStart) {
   return vol;
 }
 
-// ─── SESSION TYPE ─────────────────────────────────────────────────────────────
+// --- SESSION TYPE -------------------------------------------------------------
 const UPPER_EX = new Set([
   "Bench Press","Incline Bench Press","Pull Ups (Weighted)","Weighted Pull Ups",
   "Weighted Chin Ups","Weighted Dips","Shoulder Press","Tricep Extension","Tricep Extensions",
@@ -217,7 +217,7 @@ function inferSessionType(exercises) {
   return "UPPER";
 }
 
-// ─── PR / STREAK / HISTORY HELPERS ───────────────────────────────────────────
+// --- PR / STREAK / HISTORY HELPERS -------------------------------------------
 function calcPRs(sessions, bodyweightKg) {
   const records = {};
   sessions.forEach(session => {
@@ -271,9 +271,9 @@ function getAllExerciseNames(sessions) {
   return Object.entries(counts).sort((first, second) => second[1] - first[1]).map(([name, count]) => ({ name, count }));
 }
 
-// ─── HISTORICAL DATA (corrected) ─────────────────────────────────────────────
+// --- HISTORICAL DATA (corrected) ---------------------------------------------
 const HISTORICAL = [
-  // ── Nov 2025 – Jan 2026 (from original tracker) ───────────────────────────
+  // Nov 2025 - Jan 2026 (from original tracker)
   { date:"2025-11-01", plan:"Upper 1", exercises:[
     { name:"Bench Press", equipment:"Barbell", sets:[{weight:80,reps:8},{weight:100,reps:8},{weight:100,reps:5},{weight:80,reps:15}] },
     { name:"Incline Bench Press", equipment:"DB", sets:[{weight:55,reps:12},{weight:55,reps:12},{weight:60,reps:10}] },
@@ -370,7 +370,7 @@ const HISTORICAL = [
     { name:"Bicep Curls", equipment:"DB", sets:[{weight:20,reps:6},{weight:17.5,reps:8},{weight:17.5,reps:7}] },
     { name:"Lumbar Extension", equipment:"Machine", sets:[{weight:10,reps:10},{weight:10,reps:5},{weight:10,reps:8},{weight:10,reps:3}] },
   ]},
-  // ── March – May 2026 ──────────────────────────────────────────────────────
+  // March - May 2026----------------
   { date:"2026-03-08", plan:"Upper 1", exercises:[
     { name:"Bench Press", equipment:"Barbell", sets:[{weight:100,reps:6},{weight:100,reps:7},{weight:100,reps:5.5}] },
     { name:"Incline Bench Press", equipment:"Barbell", sets:[{weight:60,reps:13},{weight:80,reps:8},{weight:80,reps:6}] },
@@ -525,7 +525,7 @@ const HISTORICAL = [
   ]},
 ];
 
-// ─── DEFAULT PLAN ─────────────────────────────────────────────────────────────
+// --- DEFAULT PLAN -------------------------------------------------------------
 const DEFAULT_PLANS = {
   "2 Upper 2 Lower": {
     days: {
@@ -576,7 +576,7 @@ const SS_COLORS = {
   3: { text:"#1A6B42", bg:"#E5F7EF", border:"#8ED4B0" },
 };
 
-// ─── SMALL COMPONENTS ─────────────────────────────────────────────────────────
+// --- SMALL COMPONENTS ---------------------------------------------------------
 function Sparkline({ data, color, chartHeight, chartWidth }) {
   if (!data || data.length < 2) return null;
   const values = data.map(point => point.best1rm);
@@ -633,7 +633,7 @@ function EquipChips({ selected, onChange, small }) {
   );
 }
 
-// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// --- MAIN APP -----------------------------------------------------------------
 export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [sessions, setSessions] = useState([]);
@@ -692,7 +692,7 @@ export default function App() {
     <div style={{ maxWidth:480, margin:"0 auto", minHeight:"100vh", background:PAGE_BG, fontFamily:FONT_MAIN, paddingBottom:80 }}>
       <style>{GLOBAL_CSS}</style>
 
-      {/* TOP BAR — date + controls */}
+      {/* TOP BAR - date + controls */}
       <div style={{ padding:"16px 20px 0", background:PAGE_BG }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
           <div>
@@ -741,7 +741,7 @@ export default function App() {
         </div>
       )}
 
-      {/* BOTTOM TAB BAR — cycle app style */}
+      {/* BOTTOM TAB BAR - cycle app style */}
       <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:CARD_BG, borderTop:`1px solid ${MIST}`, display:"flex", zIndex:100, paddingBottom:"env(safe-area-inset-bottom)" }}>
         {[
           ["dashboard","🏠","Home"],
@@ -760,7 +760,7 @@ export default function App() {
   );
 }
 
-// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+// --- DASHBOARD ----------------------------------------------------------------
 function DashboardTab({ sessions, goals, bodyweight }) {
   const currentWeek = getWeekStart(todayStr());
   const allWeeks = getAllWeekStarts(sessions);
@@ -857,7 +857,7 @@ function DashboardTab({ sessions, goals, bodyweight }) {
                 <th style={{ padding:"3px 4px", fontWeight:700, color:STONE, fontSize:8, textAlign:"left" }}>Muscle</th>
                 {tableWeeks.map((weekStart, idx) => (
                   <th key={idx} style={{ padding:"3px 2px", textAlign:"center", fontWeight:weekStart===currentWeek ? 700 : 500, color:weekStart===currentWeek ? BLUE : STONE, fontSize:8 }}>
-                    {weekStart ? shortWeekLabel(weekStart) : "—"}
+                    {weekStart ? shortWeekLabel(weekStart) : "-"}
                     {weekStart === currentWeek && <div style={{ width:4, height:4, borderRadius:"50%", background:BLUE, margin:"1px auto 0" }}/>}
                   </th>
                 ))}
@@ -883,7 +883,7 @@ function DashboardTab({ sessions, goals, bodyweight }) {
                           <div onClick={() => setPopupCell(isActive ? null : { muscle, weekStart })}
                             style={{ background:bgColor, borderRadius:5, height:22, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", outline:isActive ? `2px solid ${INK}` : "none", outlineOffset:-1 }}>
                             <span style={{ color:textColor, fontWeight:700, fontSize:8, fontFamily:FONT_MONO }}>
-                              {vol > 0 ? `${Math.round(pct*100)}%` : "—"}
+                              {vol > 0 ? `${Math.round(pct*100)}%` : "-"}
                             </span>
                           </div>
                         </td>
@@ -933,7 +933,7 @@ function DashboardTab({ sessions, goals, bodyweight }) {
       {/* Key Lifts */}
       <Card>
         <SectionTitle>Key Lift Progress</SectionTitle>
-        <SubTitle>Epley estimated 1RM — tap to expand</SubTitle>
+        <SubTitle>Epley estimated 1RM - tap to expand</SubTitle>
         {keyLifts.map(liftName => {
           const history = getExerciseHistory(sessions, liftName, bodyweight);
           if (!history.length) return null;
@@ -950,9 +950,9 @@ function DashboardTab({ sessions, goals, bodyweight }) {
               </div>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end" }}>
                 <div>
-                  <div style={{ fontSize:9, color:STONE }}>Start → Best</div>
+                  <div style={{ fontSize:9, color:STONE }}>Start -> Best</div>
                   <div style={{ fontSize:11, fontFamily:FONT_MONO, color:SLATE }}>
-                    {firstEntry.best1rm}kg → <span style={{ color:BLUE, fontWeight:700 }}>{bestEntry.best1rm}kg</span>
+                    {firstEntry.best1rm}kg -> <span style={{ color:BLUE, fontWeight:700 }}>{bestEntry.best1rm}kg</span>
                   </div>
                 </div>
                 <Sparkline data={history} color={BLUE} chartHeight={28} chartWidth={70}/>
@@ -980,7 +980,7 @@ function DashboardTab({ sessions, goals, bodyweight }) {
           {allExercises.map(item => (
             <button key={item.name} onClick={() => setSelectedExercise(item.name === selectedExercise ? null : item.name)}
               style={{ padding:"4px 9px", borderRadius:16, border:`1.5px solid ${selectedExercise===item.name ? BLUE : MIST}`, background:selectedExercise===item.name ? BLUE : FOG, color:selectedExercise===item.name ? WHITE : SLATE, fontSize:10, fontWeight:500, cursor:"pointer", fontFamily:FONT_MAIN }}>
-              {item.name} <span style={{ opacity:0.6, fontSize:9 }}>×{item.count}</span>
+              {item.name} <span style={{ opacity:0.6, fontSize:9 }}>x{item.count}</span>
             </button>
           ))}
         </div>
@@ -1021,7 +1021,7 @@ function DashboardTab({ sessions, goals, bodyweight }) {
             <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 9px", background:FOG, borderRadius:9, marginBottom:5 }}>
               <div>
                 <div style={{ fontSize:12, fontWeight:600, color:INK }}>{name}</div>
-                <div style={{ fontSize:9, color:STONE }}>{record.weight}kg × {record.reps} · {record.date}</div>
+                <div style={{ fontSize:9, color:STONE }}>{record.weight}kg x {record.reps} · {record.date}</div>
               </div>
               <div style={{ fontSize:14, fontWeight:800, color:GOLD, fontFamily:FONT_MONO }}>{record.rm}kg</div>
             </div>
@@ -1032,7 +1032,7 @@ function DashboardTab({ sessions, goals, bodyweight }) {
   );
 }
 
-// ─── LOG TAB ──────────────────────────────────────────────────────────────────
+// --- LOG TAB ------------------------------------------------------------------
 function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logExercises, setLogExercises, logSaved, setLogSaved, saveSessions, showToast, activeDays }) {
   const [showCSV, setShowCSV] = useState(false);
 
@@ -1176,7 +1176,7 @@ function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logE
               <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
                 {exercise.lastSets.map((setItem, setIdx) => (
                   <div key={setIdx} style={{ background:MIST, borderRadius:4, padding:"2px 6px", fontFamily:FONT_MONO, fontSize:9, color:SLATE }}>
-                    <span style={{ color:PEBBLE }}>S{setIdx+1} </span>{setItem.weight ? setItem.weight+"kg" : "—"}×{setItem.reps || "—"}
+                    <span style={{ color:PEBBLE }}>S{setIdx+1} </span>{setItem.weight ? setItem.weight+"kg" : "-"}x{setItem.reps || "-"}
                   </div>
                 ))}
               </div>
@@ -1198,7 +1198,7 @@ function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logE
                   <input type="number" inputMode="numeric" placeholder="reps" value={setItem.reps}
                     onChange={event => updateExSet(exIdx, setIdx, "reps", event.target.value)}
                     style={{ padding:"9px 4px", borderRadius:6, border:`1.5px solid ${MIST}`, background:FOG, fontFamily:FONT_MONO, fontSize:15, fontWeight:500, color:INK, textAlign:"center", outline:"none", width:"100%" }}/>
-                  <button onClick={() => removeExSet(exIdx, setIdx)} style={{ width:24, height:24, borderRadius:"50%", border:`1.5px solid ${MIST}`, background:"none", color:STONE, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+                  <button onClick={() => removeExSet(exIdx, setIdx)} style={{ width:24, height:24, borderRadius:"50%", border:`1.5px solid ${MIST}`, background:"none", color:STONE, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>x</button>
                 </div>
               ))}
               <button onClick={() => addExSet(exIdx)} style={{ width:"100%", marginTop:3, padding:"6px", borderRadius:6, border:`1.5px dashed ${MIST}`, background:"none", color:STONE, fontSize:10, fontWeight:500, cursor:"pointer", fontFamily:FONT_MAIN }}>+ Add Set</button>
@@ -1250,7 +1250,7 @@ function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logE
   );
 }
 
-// ─── EXERCISE NAME MATCHING ────────────────────────────────────────────────────
+// --- EXERCISE NAME MATCHING ----------------------------------------------------
 const CANONICAL_EXERCISES = [
   "Bench Press","Incline Bench Press","Chest Fly","Weighted Dips",
   "Pull Ups (Weighted)","Weighted Chin Ups","T-Row / DB Row","Rear Deltoid","Rear Deltoid Fly",
@@ -1308,7 +1308,7 @@ function fuzzyMatchExercise(input) {
   return input;
 }
 
-// ─── HISTORY TAB ──────────────────────────────────────────────────────────────
+// --- HISTORY TAB --------------------------------------------------------------
 function HistoryTab({ sessions, saveSessions, showToast }) {
   const sorted = [...sessions].sort((first, second) => second.date.localeCompare(first.date));
   const [openKey, setOpenKey] = useState(null);
@@ -1353,7 +1353,7 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
     const exerciseList = CANONICAL_EXERCISES.map(name => "#   " + name).join("\n");
     const rows = [
       "# LIFT LOG - IMPORT TEMPLATE",
-      "# ─────────────────────────────────────────────────────────────",
+      "# -------------------------------------------------------------",
       "# INSTRUCTIONS:",
       "# Date format: YYYY-MM-DD (e.g. 2026-06-01)",
       "# Plan: Upper 1 / Lower 1 / Upper 2 / Lower 2 / Free Session",
@@ -1368,7 +1368,7 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
       "# VALID EXERCISE NAMES (use these or close variations):",
       exerciseList,
       "#",
-      "# ─────────────────────────────────────────────────────────────",
+      "# -------------------------------------------------------------",
       "Date,Plan,Exercise,Equipment,S1_Weight,S1_Reps,S2_Weight,S2_Reps,S3_Weight,S3_Reps,S4_Weight,S4_Reps",
       "2026-06-02,Upper 1,Bench Press,Barbell,110,6,110,6,105,8,,",
       "2026-06-02,Upper 1,Pull Ups (Weighted),Belt,20,8,20,7,20,6,,",
@@ -1412,7 +1412,7 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
           }
           // Fuzzy match the exercise name
           const matchedName = fuzzyMatchExercise(rawName);
-          if (matchedName !== rawName) nameChanges.push(rawName + " → " + matchedName);
+          if (matchedName !== rawName) nameChanges.push(rawName + " -> " + matchedName);
           const key = dateStr + "_" + (planName || "");
           if (!parsedMap[key]) parsedMap[key] = { date:dateStr, plan:planName || "Imported", type:"UPPER", exercises:[] };
           const sets = [];
@@ -1512,7 +1512,7 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
                           </div>
                         ) : (
                           <div key={setIdx} style={{ background:WHITE, borderRadius:4, padding:"2px 6px", fontFamily:FONT_MONO, fontSize:9, color:SLATE }}>
-                            S{setIdx+1} {setItem.weight ? setItem.weight + "kg" : "—"} x {setItem.reps || "—"}
+                            S{setIdx+1} {setItem.weight ? setItem.weight + "kg" : "-"} x {setItem.reps || "-"}
                           </div>
                         )
                       ))}
@@ -1541,7 +1541,7 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
             ) : (
               <div>
                 <div style={{ background:FOG, borderRadius:10, padding:"12px 14px", marginBottom:14 }}>
-                  <div style={{ fontWeight:700, fontSize:12, color:GREEN, marginBottom:8 }}>Preview — {(importPreview.sessions||importPreview).length} session{(importPreview.sessions||importPreview).length > 1 ? "s" : ""} found</div>
+                  <div style={{ fontWeight:700, fontSize:12, color:GREEN, marginBottom:8 }}>Preview - {(importPreview.sessions||importPreview).length} session{(importPreview.sessions||importPreview).length > 1 ? "s" : ""} found</div>
                   {(importPreview.sessions||importPreview).map((session, idx) => (
                     <div key={idx} style={{ fontSize:11, color:SLATE, marginBottom:3 }}>
                       <span style={{ fontWeight:600, color:INK }}>{session.date}</span> · {session.plan} · {session.exercises.length} exercises
@@ -1576,7 +1576,7 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
   );
 }
 
-// ─── PLAN TAB ─────────────────────────────────────────────────────────────────
+// --- PLAN TAB -----------------------------------------------------------------
 function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
   const [selectedPlan, setSelectedPlan] = useState(activePlanName);
   const [localPlans, setLocalPlans] = useState(() => JSON.parse(JSON.stringify(plans)));
@@ -1673,7 +1673,7 @@ function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
               : <div style={{ flex:1, fontWeight:700, fontSize:13, color:INK }}>{dayName}</div>
             }
             <span style={{ fontSize:9, color:STONE }}>{exercises.length} ex</span>
-            {editMode && <button onClick={() => removeDay(dayName)} style={{ background:"none", border:"none", color:CORAL, fontSize:16, cursor:"pointer", padding:"0 2px" }}>×</button>}
+            {editMode && <button onClick={() => removeDay(dayName)} style={{ background:"none", border:"none", color:CORAL, fontSize:16, cursor:"pointer", padding:"0 2px" }}>x</button>}
           </div>
           <div style={{ padding:"7px 11px" }}>
             {exercises.map((exercise, idx) => {
@@ -1702,7 +1702,7 @@ function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
                       {editMode && <EquipChips selected={exercise.equipment} onChange={equip => updateEquip(dayName, idx, equip)} small/>}
                       {!editMode && <div style={{ fontSize:9, color:STONE }}>{exercise.equipment}</div>}
                     </div>
-                    {/* Target sets — always visible, editable in modify mode */}
+                    {/* Target sets - always visible, editable in modify mode */}
                     <div style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
                       {editMode ? (
                         <input type="number" value={targetSets} onFocus={event => event.target.select()}
@@ -1715,11 +1715,11 @@ function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
                     </div>
                     {editMode && (
                       <div style={{ display:"flex", flexDirection:"column", gap:3, flexShrink:0 }}>
-                        <button onClick={() => cycleSS(dayName, idx)} title="Cycle: none → SS A → SS B → SS C → none"
+                        <button onClick={() => cycleSS(dayName, idx)} title="Cycle: none -> SS A -> SS B -> SS C -> none"
                           style={{ fontSize:7, fontWeight:800, padding:"2px 5px", borderRadius:4, border:`1px solid ${ssCol ? ssCol.border : MIST}`, background:ssCol ? ssCol.bg : "none", color:ssCol ? ssCol.text : STONE, cursor:"pointer", fontFamily:FONT_MAIN, minWidth:26, textAlign:"center" }}>
                           {groupNum ? `SS ${["A","B","C"][groupNum-1]}` : "SS"}
                         </button>
-                        <button onClick={() => removeExercise(dayName, idx)} style={{ background:"none", border:"none", color:STONE, fontSize:14, cursor:"pointer", padding:0, lineHeight:1 }}>×</button>
+                        <button onClick={() => removeExercise(dayName, idx)} style={{ background:"none", border:"none", color:STONE, fontSize:14, cursor:"pointer", padding:0, lineHeight:1 }}>x</button>
                       </div>
                     )}
                   </div>
@@ -1786,7 +1786,7 @@ function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
   );
 }
 
-// ─── PLAN PICKER MODAL ────────────────────────────────────────────────────────
+// --- PLAN PICKER MODAL --------------------------------------------------------
 function PlanPickerModal({ plans, activePlanName, onSelect, onClose }) {
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"flex-end" }} onClick={event => event.target === event.currentTarget && onClose()}>
@@ -1804,7 +1804,7 @@ function PlanPickerModal({ plans, activePlanName, onSelect, onClose }) {
   );
 }
 
-// ─── SETTINGS MODAL ───────────────────────────────────────────────────────────
+// --- SETTINGS MODAL -----------------------------------------------------------
 function SettingsModal({ goals, bodyweight, onClose }) {
   const [localGoals, setLocalGoals] = useState({ ...goals });
   const [localBW, setLocalBW] = useState(String(bodyweight));
@@ -1831,7 +1831,7 @@ function SettingsModal({ goals, bodyweight, onClose }) {
           </div>
         </div>
 
-        {/* Volume goals — single number */}
+        {/* Volume goals - single number */}
         <div style={{ fontWeight:700, fontSize:12, color:INK, marginBottom:2 }}>Weekly Sets Goal per Muscle</div>
         <div style={{ fontSize:10, color:STONE, marginBottom:14 }}>Based on hypertrophy research (Schoenfeld et al)</div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
