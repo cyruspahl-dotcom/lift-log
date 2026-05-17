@@ -1,0 +1,1864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Lift Log">
+  <title>Lift Log</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    #root { height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback } = React;
+
+// ─── STORAGE ──────────────────────────────────────────────────────────────────
+async function storageGet(key) {
+  try { const val = localStorage.getItem(key); return val ? JSON.parse(val) : null; }
+  catch { return null; }
+}
+async function storageSet(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); }
+  catch (err) { console.error(err); }
+}
+
+// ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
+const BLUE    = "#2B7EC1";
+const BLUEDARK= "#1A5A94";
+const GREEN   = "#27A866";
+const AMBER   = "#E8A020";
+const CORAL   = "#E05A45";
+const GOLD    = "#D4962A";
+const INK     = "#1A1A1A";
+const SLATE   = "#4A4A4A";
+const STONE   = "#8A8A8A";
+const PEBBLE  = "#C0C0C0";
+const WHITE   = "#FFFFFF";
+
+// Cycle-app warm palette
+const PAGE_BG  = "#F2F0EB";   // warm off-white
+const CARD_BG  = "#FFFFFF";
+const SKY      = "#EAE8E2";   // slightly darker warm for alternates
+const FOG      = "#F7F5F0";
+const MIST     = "#E0DDD6";
+
+// 5-level volume colours (low → high)
+const VOL_NONE   = "#E8E5DF";  // empty grey-warm
+const VOL_LOW    = "#F4A28C";  // light coral
+const VOL_MED    = "#F0C060";  // yellow-amber
+const VOL_GOOD   = "#82C9A0";  // soft green
+const VOL_GREAT  = "#3BAD72";  // strong green
+
+const FONT_MAIN = "'Outfit', sans-serif";
+const FONT_MONO = "'DM Mono', monospace";
+const FONT_SERIF = "Georgia, 'Times New Roman', serif";
+
+const GLOBAL_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: ${FONT_MAIN}; background: ${PAGE_BG}; }
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  input[type=number] { -moz-appearance: textfield; }
+`;
+
+// ─── MUSCLE GROUPS ────────────────────────────────────────────────────────────
+const MUSCLES = ["chest","back","lowerback","traps","shoulders","biceps","triceps","quads","hamstrings","glutes"];
+const MUSCLE_LABEL = {
+  chest:"Chest", back:"Back", lowerback:"Lower Back", traps:"Traps",
+  shoulders:"Shoulders", biceps:"Biceps", triceps:"Triceps",
+  quads:"Quads", hamstrings:"Hamstrings", glutes:"Glutes",
+};
+const DEFAULT_GOAL = {
+  chest:16, back:16, lowerback:10, traps:8,
+  shoulders:14, biceps:12, triceps:12, quads:14, hamstrings:12, glutes:14,
+};
+
+const MUSCLE_MAP = {
+  "Bench Press":           { chest:1.0, triceps:0.5, shoulders:0.3 },
+  "Incline Bench Press":   { chest:1.0, triceps:0.5, shoulders:0.3 },
+  "Chest Fly":             { chest:1.0 },
+  "Weighted Dips":         { chest:0.7, triceps:1.0 },
+  "Pull Ups (Weighted)":   { back:1.0, biceps:0.5 },
+  "Weighted Pull Ups":     { back:1.0, biceps:0.5 },
+  "Weighted Chin Ups":     { back:1.0, biceps:0.7 },
+  "T-Row / DB Row":        { back:1.0, biceps:0.3 },
+  "T-Row":                 { back:1.0, biceps:0.3 },
+  "DB Row":                { back:1.0, biceps:0.3 },
+  "Rear Deltoid":          { shoulders:0.7, back:0.3 },
+  "Rear Deltoid Fly":      { shoulders:0.7, back:0.3 },
+  "Shoulder Press":        { shoulders:1.0, triceps:0.3, traps:0.2 },
+  "Shoulder Shrugs":       { traps:1.0 },
+  "Cable Deltoid Raise":   { shoulders:1.0 },
+  "Deltoid Raises":        { shoulders:1.0 },
+  "Lat Raises":            { shoulders:1.0 },
+  "Bicep Curls":           { biceps:1.0 },
+  "Tricep Extension":      { triceps:1.0 },
+  "Tricep Extensions":     { triceps:1.0 },
+  "Cable Crunch":          { lowerback:0.3 },
+  "Back Squat":            { quads:1.0, glutes:0.5 },
+  "Quad Extension":        { quads:1.0 },
+  "Quad Extensions":       { quads:1.0 },
+  "RDL":                   { hamstrings:1.0, glutes:0.7, lowerback:0.5 },
+  "Hamstring Curl":        { hamstrings:1.0 },
+  "Hip Thrusts":           { glutes:1.0, hamstrings:0.3 },
+  "Hip Extensions":        { glutes:0.8, hamstrings:0.5 },
+  "Bulgarian Split Squat": { quads:0.8, glutes:0.8, hamstrings:0.3 },
+  "Bulgarian Split Squats":{ quads:0.8, glutes:0.8, hamstrings:0.3 },
+  "Dumbbell Lunges":       { quads:0.8, glutes:0.7, hamstrings:0.3 },
+  "Leg Press":             { quads:1.0, glutes:0.3 },
+  "Abduction Machine":     { glutes:1.0 },
+  "Adduction Machine":     { hamstrings:0.3, glutes:0.3 },
+  "Lumbar Extension":      { lowerback:1.0 },
+  "Leg Raises":            { lowerback:0.2 },
+};
+
+// ─── 1RM HELPERS ─────────────────────────────────────────────────────────────
+// These exercises use a single dumbbell per hand — weight shown = per hand, total = ×2
+// But ONLY when equipment is DB. If done with barbell, weight is already total.
+const DB_BILATERAL_EXERCISES = new Set([
+  "Bicep Curls","Incline Bench Press","Shoulder Press","Dumbbell Lunges",
+  "Bulgarian Split Squat","Bulgarian Split Squats","DB Row","Deltoid Raises",
+  "Lat Raises","Rear Deltoid Fly","Weighted Dips","Weighted Chin Ups",
+]);
+const BW_EXERCISES = new Set([
+  "Pull Ups (Weighted)","Weighted Pull Ups","Weighted Chin Ups","Weighted Dips",
+]);
+
+function calc1RM(weightKg, reps, exerciseName, bodyweightKg, equipment) {
+  if (!reps || reps <= 0) return 0;
+  let load = weightKg || 0;
+  // Only double if the exercise is DB-bilateral AND actually logged with DB equipment
+  const isDB = equipment === "DB" || equipment === "KB";
+  if (DB_BILATERAL_EXERCISES.has(exerciseName) && isDB) load = load * 2;
+  if (BW_EXERCISES.has(exerciseName)) load = load + bodyweightKg;
+  if (load <= 0) return 0;
+  const raw = load * (1 + reps / 30);
+  if (BW_EXERCISES.has(exerciseName)) return Math.round((raw - bodyweightKg) * 10) / 10;
+  return Math.round(raw * 10) / 10;
+}
+
+function getBest1RM(sets, exerciseName, bodyweightKg, equipment) {
+  return Math.max(0, ...sets.map(setItem => calc1RM(setItem.weight || 0, setItem.reps || 0, exerciseName, bodyweightKg, equipment)));
+}
+
+// ─── DATE / WEEK HELPERS ─────────────────────────────────────────────────────
+function getWeekStart(dateStr) {
+  const date = new Date(dateStr);
+  const day = date.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() + offset);
+  return monday.toISOString().split("T")[0];
+}
+
+function shortWeekLabel(weekStart) {
+  return new Date(weekStart).toLocaleDateString("en-GB", { day:"numeric", month:"short" });
+}
+
+function todayStr() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getAllWeekStarts(sessions) {
+  const weeks = new Set(sessions.map(session => getWeekStart(session.date)));
+  weeks.add(getWeekStart(todayStr()));
+  return [...weeks].sort();
+}
+
+function calcWeekVolume(sessions, weekStart) {
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+  const weekEndStr = weekEnd.toISOString().split("T")[0];
+  const vol = {};
+  MUSCLES.forEach(muscle => { vol[muscle] = 0; });
+  sessions
+    .filter(session => session.date >= weekStart && session.date < weekEndStr)
+    .forEach(session => {
+      session.exercises.forEach(exercise => {
+        const contributions = MUSCLE_MAP[exercise.name] || {};
+        Object.entries(contributions).forEach(([muscle, factor]) => {
+          if (vol[muscle] !== undefined) vol[muscle] += exercise.sets.length * factor;
+        });
+      });
+    });
+  return vol;
+}
+
+// ─── SESSION TYPE ─────────────────────────────────────────────────────────────
+const UPPER_EX = new Set([
+  "Bench Press","Incline Bench Press","Pull Ups (Weighted)","Weighted Pull Ups",
+  "Weighted Chin Ups","Weighted Dips","Shoulder Press","Tricep Extension","Tricep Extensions",
+  "Bicep Curls","T-Row / DB Row","T-Row","DB Row","Chest Fly","Rear Deltoid","Rear Deltoid Fly",
+  "Shoulder Shrugs","Cable Deltoid Raise","Deltoid Raises","Lat Raises","Hip Extensions","Cable Crunch",
+]);
+const LOWER_EX = new Set([
+  "Back Squat","RDL","Hamstring Curl","Quad Extension","Quad Extensions","Hip Thrusts",
+  "Bulgarian Split Squat","Bulgarian Split Squats","Abduction Machine","Adduction Machine",
+  "Leg Press","Lumbar Extension","Leg Raises","Dumbbell Lunges",
+]);
+
+function inferSessionType(exercises) {
+  let upperCount = 0, lowerCount = 0;
+  exercises.forEach(exercise => {
+    if (UPPER_EX.has(exercise.name)) upperCount++;
+    if (LOWER_EX.has(exercise.name)) lowerCount++;
+  });
+  if (upperCount > 0 && lowerCount > 0) return "FULL BODY";
+  if (lowerCount > upperCount) return "LOWER";
+  return "UPPER";
+}
+
+// ─── PR / STREAK / HISTORY HELPERS ───────────────────────────────────────────
+function calcPRs(sessions, bodyweightKg) {
+  const records = {};
+  sessions.forEach(session => {
+    session.exercises.forEach(exercise => {
+      exercise.sets.forEach(setItem => {
+        const rm = calc1RM(setItem.weight || 0, setItem.reps || 0, exercise.name, bodyweightKg, exercise.equipment);
+        if (!records[exercise.name] || rm > records[exercise.name].rm) {
+          records[exercise.name] = { rm, weight: setItem.weight, reps: setItem.reps, date: session.date };
+        }
+      });
+    });
+  });
+  return records;
+}
+
+function calcStreak(sessions) {
+  const uniqueDates = [...new Set(sessions.map(session => session.date))].sort().reverse();
+  if (!uniqueDates.length) return 0;
+  let streak = 0;
+  let check = new Date();
+  check.setHours(0, 0, 0, 0);
+  for (const dateStr of uniqueDates) {
+    const sessionDate = new Date(dateStr);
+    sessionDate.setHours(0, 0, 0, 0);
+    if (Math.round((check - sessionDate) / 86400000) <= 1) {
+      streak++;
+      check = sessionDate;
+    } else break;
+  }
+  return streak;
+}
+
+function getExerciseHistory(sessions, exerciseName, bodyweightKg) {
+  const history = [];
+  sessions.forEach(session => {
+    const exercise = session.exercises.find(ex => ex.name === exerciseName);
+    if (!exercise) return;
+    const best = getBest1RM(exercise.sets, exerciseName, bodyweightKg, exercise.equipment);
+    if (best > 0) history.push({ date: session.date, best1rm: best, sets: exercise.sets, equipment: exercise.equipment });
+  });
+  return history.sort((first, second) => first.date.localeCompare(second.date));
+}
+
+function getAllExerciseNames(sessions) {
+  const counts = {};
+  sessions.forEach(session => {
+    session.exercises.forEach(exercise => {
+      counts[exercise.name] = (counts[exercise.name] || 0) + 1;
+    });
+  });
+  return Object.entries(counts).sort((first, second) => second[1] - first[1]).map(([name, count]) => ({ name, count }));
+}
+
+// ─── HISTORICAL DATA (corrected) ─────────────────────────────────────────────
+const HISTORICAL = [
+  // ── Nov 2025 – Jan 2026 (from original tracker) ───────────────────────────
+  { date:"2025-11-01", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:80,reps:8},{weight:100,reps:8},{weight:100,reps:5},{weight:80,reps:15}] },
+    { name:"Incline Bench Press", equipment:"DB", sets:[{weight:55,reps:12},{weight:55,reps:12},{weight:60,reps:10}] },
+    { name:"Chest Fly", equipment:"Cable", sets:[{weight:63,reps:15},{weight:70,reps:15}] },
+    { name:"Tricep Extensions", equipment:"Cable", sets:[{weight:31.5,reps:10},{weight:31.5,reps:12},{weight:31.5,reps:12}] },
+    { name:"Rear Deltoid Fly", equipment:"DB", sets:[{weight:5.7,reps:12},{weight:5.7,reps:12},{weight:8,reps:12}] },
+    { name:"Pull Ups (Weighted)", equipment:"BW", sets:[{weight:0,reps:8},{weight:0,reps:8},{weight:0,reps:6}] },
+    { name:"T-Row / DB Row", equipment:"Cable", sets:[{weight:36,reps:12},{weight:36,reps:12},{weight:36,reps:10}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:20,reps:10},{weight:17.5,reps:7}] },
+    { name:"Leg Raises", equipment:"BW", sets:[{weight:0,reps:20}] },
+  ]},
+  { date:"2025-11-01", plan:"Lower 1", exercises:[
+    { name:"Deadlift", equipment:"Barbell", sets:[{weight:120,reps:10},{weight:120,reps:10},{weight:120,reps:10}] },
+    { name:"Quad Extension", equipment:"Machine", sets:[{weight:77,reps:12},{weight:91,reps:12},{weight:101,reps:12}] },
+    { name:"Hamstring Curl", equipment:"Machine", sets:[{weight:50,reps:12},{weight:60,reps:10},{weight:60,reps:12}] },
+    { name:"Shoulder Press", equipment:"KB", sets:[{weight:8,reps:12},{weight:8,reps:12},{weight:8,reps:12}] },
+    { name:"Lat Raises", equipment:"DB", sets:[{weight:6,reps:12},{weight:6,reps:12},{weight:6,reps:12}] },
+  ]},
+  { date:"2025-12-04", plan:"Lower 1", exercises:[
+    { name:"Shoulder Press", equipment:"KB", sets:[{weight:12,reps:12},{weight:12,reps:12}] },
+    { name:"Lat Raises", equipment:"DB", sets:[{weight:12,reps:12},{weight:14,reps:12},{weight:14,reps:12}] },
+    { name:"Shoulder Press", equipment:"Barbell", sets:[{weight:45,reps:12},{weight:45,reps:9},{weight:45,reps:7}] },
+    { name:"Rear Deltoid", equipment:"Machine", sets:[{weight:50,reps:5},{weight:50,reps:9},{weight:50,reps:8}] },
+  ]},
+  { date:"2025-12-07", plan:"Lower 1", exercises:[
+    { name:"Deadlift", equipment:"Barbell", sets:[{weight:140,reps:9},{weight:150,reps:8},{weight:150,reps:6},{weight:100,reps:5}] },
+  ]},
+  { date:"2025-12-09", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:90,reps:10},{weight:95,reps:7},{weight:90,reps:9}] },
+    { name:"Incline Bench Press", equipment:"DB", sets:[{weight:25,reps:15},{weight:25,reps:12},{weight:25,reps:10}] },
+    { name:"Chest Fly", equipment:"Cable", sets:[{weight:77,reps:15},{weight:84,reps:10},{weight:84,reps:8}] },
+    { name:"Pull Ups (Weighted)", equipment:"BW", sets:[{weight:0,reps:12},{weight:0,reps:12},{weight:0,reps:9}] },
+    { name:"T-Row / DB Row", equipment:"DB", sets:[{weight:42.5,reps:12},{weight:42.5,reps:12},{weight:42.5,reps:12}] },
+    { name:"Lumbar Extension", equipment:"Machine", sets:[{weight:0,reps:15},{weight:10,reps:12},{weight:10,reps:12}] },
+  ]},
+  { date:"2025-12-14", plan:"Lower 1", exercises:[
+    { name:"Shoulder Press", equipment:"DB", sets:[{weight:12.5,reps:12},{weight:12.5,reps:12},{weight:12.5,reps:12}] },
+  ]},
+  { date:"2025-12-15", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:90,reps:10},{weight:80,reps:8},{weight:80,reps:6}] },
+    { name:"Incline Bench Press", equipment:"DB", sets:[{weight:25,reps:10},{weight:25,reps:8},{weight:25,reps:8}] },
+    { name:"Chest Fly", equipment:"Cable", sets:[{weight:70,reps:12},{weight:70,reps:10},{weight:70,reps:10}] },
+    { name:"Pull Ups (Weighted)", equipment:"BW", sets:[{weight:0,reps:12},{weight:0,reps:10},{weight:0,reps:6}] },
+    { name:"Lumbar Extension", equipment:"Machine", sets:[{weight:10,reps:12},{weight:10,reps:12},{weight:10,reps:12}] },
+  ]},
+  { date:"2025-12-15", plan:"Lower 1", exercises:[
+    { name:"Deadlift", equipment:"Barbell", sets:[{weight:150,reps:9},{weight:150,reps:6},{weight:150,reps:6}] },
+    { name:"Quad Extension", equipment:"Machine", sets:[{weight:0,reps:15},{weight:0,reps:12}] },
+    { name:"Hamstring Curl", equipment:"Machine", sets:[{weight:87.5,reps:12},{weight:102.5,reps:12},{weight:102.5,reps:12},{weight:102.5,reps:12}] },
+    { name:"T-Row / DB Row", equipment:"Cable", sets:[{weight:86,reps:8},{weight:79,reps:13}] },
+    { name:"Rear Deltoid", equipment:"Machine", sets:[{weight:50,reps:10}] },
+    { name:"Lat Raises", equipment:"DB", sets:[{weight:10,reps:12},{weight:10,reps:10}] },
+    { name:"Shoulder Press", equipment:"KB", sets:[{weight:12,reps:10},{weight:8,reps:10}] },
+  ]},
+  { date:"2025-12-18", plan:"Lower 1", exercises:[
+    { name:"Shoulder Press", equipment:"KB", sets:[{weight:12,reps:10},{weight:8,reps:10}] },
+  ]},
+  { date:"2025-12-25", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:90,reps:12},{weight:100,reps:7},{weight:100,reps:7}] },
+    { name:"Incline Bench Press", equipment:"DB", sets:[{weight:40,reps:15},{weight:50,reps:12},{weight:60,reps:10}] },
+    { name:"Chest Fly", equipment:"Cable", sets:[{weight:82,reps:11},{weight:82,reps:9}] },
+    { name:"Tricep Extensions", equipment:"Cable", sets:[{weight:32.5,reps:12},{weight:36.2,reps:10},{weight:36.2,reps:8}] },
+    { name:"Pull Ups (Weighted)", equipment:"BW", sets:[{weight:0,reps:12},{weight:0,reps:10},{weight:0,reps:10}] },
+    { name:"T-Row / DB Row", equipment:"Cable", sets:[{weight:105,reps:10},{weight:105,reps:12},{weight:105,reps:10}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:20,reps:6},{weight:20,reps:7}] },
+  ]},
+  { date:"2026-01-02", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:90,reps:13},{weight:100,reps:7},{weight:100,reps:5},{weight:90,reps:6}] },
+    { name:"Incline Bench Press", equipment:"DB", sets:[{weight:60,reps:10},{weight:70,reps:9},{weight:70,reps:7}] },
+    { name:"Chest Fly", equipment:"Cable", sets:[{weight:80,reps:9},{weight:72.5,reps:7}] },
+    { name:"Tricep Extensions", equipment:"Cable", sets:[{weight:38.5,reps:10},{weight:38.5,reps:8}] },
+    { name:"Pull Ups (Weighted)", equipment:"BW", sets:[{weight:0,reps:12},{weight:0,reps:11},{weight:0,reps:8},{weight:0,reps:5}] },
+    { name:"T-Row / DB Row", equipment:"Cable", sets:[{weight:97,reps:12},{weight:107,reps:11},{weight:107,reps:12}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:15,reps:10}] },
+  ]},
+  { date:"2026-01-02", plan:"Lower 1", exercises:[
+    { name:"Deadlift", equipment:"Barbell", sets:[{weight:150,reps:9},{weight:150,reps:6},{weight:150,reps:5}] },
+    { name:"Hamstring Curl", equipment:"Machine", sets:[{weight:59,reps:12},{weight:59,reps:15}] },
+    { name:"Shoulder Press", equipment:"DB", sets:[{weight:15,reps:10},{weight:10,reps:10},{weight:10,reps:10}] },
+  ]},
+  { date:"2026-01-14", plan:"Lower 1", exercises:[
+    { name:"Deadlift", equipment:"Barbell", sets:[{weight:140,reps:8},{weight:150,reps:7}] },
+    { name:"Quad Extension", equipment:"Machine", sets:[{weight:99,reps:12},{weight:104,reps:12}] },
+    { name:"Shoulder Press", equipment:"DB", sets:[{weight:12.5,reps:12}] },
+  ]},
+  { date:"2026-01-20", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:80,reps:14},{weight:90,reps:10},{weight:90,reps:5}] },
+    { name:"Incline Bench Press", equipment:"DB", sets:[{weight:50,reps:12},{weight:60,reps:12},{weight:70,reps:8},{weight:50,reps:10}] },
+    { name:"Chest Fly", equipment:"Cable", sets:[{weight:77,reps:11},{weight:77,reps:9},{weight:70,reps:8}] },
+    { name:"Tricep Extensions", equipment:"Cable", sets:[{weight:36,reps:12},{weight:38.3,reps:9},{weight:38.3,reps:7}] },
+    { name:"Rear Deltoid Fly", equipment:"Cable", sets:[{weight:43,reps:12},{weight:50,reps:12},{weight:57,reps:12},{weight:63,reps:12}] },
+    { name:"Pull Ups (Weighted)", equipment:"BW", sets:[{weight:0,reps:12},{weight:0,reps:10},{weight:0,reps:10}] },
+    { name:"T-Row / DB Row", equipment:"Cable", sets:[{weight:100,reps:12},{weight:100,reps:12},{weight:93,reps:12}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:20,reps:6},{weight:17.5,reps:8},{weight:17.5,reps:7}] },
+    { name:"Lumbar Extension", equipment:"Machine", sets:[{weight:10,reps:10},{weight:10,reps:5},{weight:10,reps:8},{weight:10,reps:3}] },
+  ]},
+  // ── March – May 2026 ──────────────────────────────────────────────────────
+  { date:"2026-03-08", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:100,reps:6},{weight:100,reps:7},{weight:100,reps:5.5}] },
+    { name:"Incline Bench Press", equipment:"Barbell", sets:[{weight:60,reps:13},{weight:80,reps:8},{weight:80,reps:6}] },
+    { name:"Cable Deltoid Raise", equipment:"Cable", sets:[{weight:13.5,reps:15},{weight:18.5,reps:9},{weight:18.5,reps:8}] },
+    { name:"Shoulder Press", equipment:"Barbell", sets:[{weight:15,reps:15},{weight:20,reps:8},{weight:15,reps:12}] },
+    { name:"Shoulder Shrugs", equipment:"Barbell", sets:[{weight:45,reps:10},{weight:45,reps:10},{weight:45,reps:18}] },
+    { name:"Tricep Extension", equipment:"Machine", sets:[{weight:31,reps:18},{weight:36,reps:10},{weight:36,reps:8}] },
+  ]},
+  { date:"2026-03-10", plan:"Upper 2", exercises:[
+    { name:"Hip Extensions", equipment:"Machine", sets:[{weight:190,reps:10},{weight:210,reps:8},{weight:210,reps:8}] },
+    { name:"Pull Ups (Weighted)", equipment:"Belt", sets:[{weight:10,reps:8},{weight:10,reps:8},{weight:10,reps:10}] },
+    { name:"T-Row / DB Row", equipment:"Machine", sets:[{weight:50,reps:12},{weight:60,reps:11},{weight:60,reps:10}] },
+    { name:"Dumbbell Lunges", equipment:"DB", sets:[{weight:16,reps:12},{weight:16,reps:12},{weight:16,reps:12}] },
+    { name:"Cable Crunch", equipment:"Cable", sets:[{weight:24,reps:20},{weight:24,reps:18},{weight:34,reps:12}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:16,reps:10},{weight:16,reps:9},{weight:16,reps:8}] },
+  ]},
+  { date:"2026-03-14", plan:"Lower 1", exercises:[
+    { name:"Quad Extension", equipment:"Machine", sets:[{weight:102,reps:12},{weight:117.5,reps:9},{weight:117.5,reps:8}] },
+    { name:"Hamstring Curl", equipment:"Machine", sets:[{weight:80,reps:12},{weight:87.5,reps:10},{weight:95,reps:8}] },
+    { name:"Chest Fly", equipment:"Machine", sets:[{weight:72,reps:13},{weight:87.5,reps:8},{weight:87.5,reps:8}] },
+    { name:"Rear Deltoid", equipment:"Machine", sets:[{weight:50,reps:15},{weight:65,reps:10},{weight:65,reps:8}] },
+    { name:"Abduction Machine", equipment:"Machine", sets:[{weight:102.5,reps:15},{weight:110,reps:15},{weight:110,reps:15}] },
+  ]},
+  { date:"2026-03-16", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:110,reps:6.5},{weight:110,reps:5.5},{weight:100,reps:9},{weight:100,reps:8}] },
+    { name:"Incline Bench Press", equipment:"DB", sets:[{weight:26.4,reps:10},{weight:26.4,reps:13},{weight:26.4,reps:10}] },
+    { name:"Shoulder Press", equipment:"DB", sets:[{weight:17.5,reps:12},{weight:17.5,reps:10},{weight:17.5,reps:10}] },
+    { name:"Shoulder Shrugs", equipment:"Barbell", sets:[{weight:100,reps:12},{weight:100,reps:14},{weight:100,reps:14}] },
+    { name:"Tricep Extension", equipment:"Band", sets:[{weight:0,reps:12},{weight:0,reps:12},{weight:0,reps:12}] },
+  ]},
+  { date:"2026-03-18", plan:"Upper 2", exercises:[
+    { name:"Back Squat", equipment:"Barbell", sets:[{weight:120,reps:6},{weight:100,reps:6},{weight:100,reps:6}] },
+    { name:"Pull Ups (Weighted)", equipment:"Belt", sets:[{weight:15,reps:8},{weight:15,reps:8},{weight:15,reps:7.5},{weight:10,reps:8}] },
+    { name:"T-Row / DB Row", equipment:"Machine", sets:[{weight:40,reps:8},{weight:50,reps:8},{weight:40,reps:8}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:16,reps:8},{weight:16,reps:8},{weight:16,reps:8}] },
+  ]},
+  { date:"2026-03-22", plan:"Lower 1", exercises:[
+    { name:"RDL", equipment:"Barbell", sets:[{weight:100,reps:8},{weight:100,reps:8},{weight:100,reps:8}] },
+    { name:"Quad Extension", equipment:"Machine", sets:[{weight:95,reps:12},{weight:99,reps:12},{weight:99,reps:12}] },
+    { name:"Hamstring Curl", equipment:"Machine", sets:[{weight:75,reps:8},{weight:72,reps:8},{weight:72,reps:6}] },
+    { name:"Chest Fly", equipment:"Machine", sets:[{weight:77,reps:15},{weight:84,reps:10},{weight:84,reps:9}] },
+    { name:"Rear Deltoid", equipment:"Machine", sets:[{weight:63,reps:12},{weight:70,reps:12},{weight:77,reps:10}] },
+    { name:"Abduction Machine", equipment:"Machine", sets:[{weight:77,reps:20},{weight:90,reps:15},{weight:90,reps:13}] },
+    { name:"Hip Thrusts", equipment:"Machine", sets:[{weight:60,reps:8},{weight:90,reps:8},{weight:90,reps:8}] },
+  ]},
+  { date:"2026-03-24", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:110,reps:6},{weight:110,reps:5},{weight:105,reps:8},{weight:100,reps:7}] },
+    { name:"Incline Bench Press", equipment:"DB", sets:[{weight:26.4,reps:13},{weight:26.4,reps:10},{weight:26.4,reps:13}] },
+    { name:"Shoulder Press", equipment:"Barbell", sets:[{weight:22.5,reps:8},{weight:17.5,reps:8},{weight:15,reps:8}] },
+    { name:"Shoulder Shrugs", equipment:"Barbell", sets:[{weight:110,reps:24},{weight:130,reps:12},{weight:130,reps:12}] },
+    { name:"Tricep Extension", equipment:"Band", sets:[{weight:0,reps:20},{weight:0,reps:12},{weight:0,reps:12}] },
+  ]},
+  { date:"2026-03-26", plan:"Upper 2", exercises:[
+    { name:"Back Squat", equipment:"Barbell", sets:[{weight:110,reps:6},{weight:110,reps:6},{weight:110,reps:6},{weight:110,reps:6}] },
+    { name:"Pull Ups (Weighted)", equipment:"Belt", sets:[{weight:15,reps:8},{weight:15,reps:8},{weight:15,reps:8},{weight:15,reps:8}] },
+    { name:"T-Row / DB Row", equipment:"KB", sets:[{weight:24,reps:10},{weight:24,reps:12},{weight:24,reps:10}] },
+    { name:"Dumbbell Lunges", equipment:"DB", sets:[{weight:17.5,reps:12},{weight:17.5,reps:12},{weight:17.5,reps:12}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:17.5,reps:12},{weight:17.5,reps:10},{weight:17.5,reps:12}] },
+  ]},
+  { date:"2026-03-29", plan:"Lower 1", exercises:[
+    { name:"RDL", equipment:"Barbell", sets:[{weight:110,reps:8},{weight:110,reps:8},{weight:110,reps:8}] },
+    { name:"Quad Extension", equipment:"Machine", sets:[{weight:93,reps:10},{weight:93,reps:12},{weight:93,reps:12}] },
+    { name:"Hamstring Curl", equipment:"Machine", sets:[{weight:73,reps:10},{weight:73,reps:10},{weight:73,reps:10}] },
+    { name:"Chest Fly", equipment:"Machine", sets:[{weight:86,reps:16},{weight:93,reps:14},{weight:93,reps:12}] },
+    { name:"Rear Deltoid", equipment:"Machine", sets:[{weight:79,reps:10},{weight:79,reps:10},{weight:79,reps:10}] },
+  ]},
+  { date:"2026-03-31", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:110,reps:8},{weight:110,reps:7},{weight:110,reps:5},{weight:100,reps:9}] },
+    { name:"Incline Bench Press", equipment:"DB", sets:[{weight:30,reps:12},{weight:30,reps:9},{weight:30,reps:8}] },
+    { name:"Shoulder Press", equipment:"Barbell", sets:[{weight:18,reps:8},{weight:16,reps:10},{weight:16,reps:8}] },
+    { name:"Shoulder Shrugs", equipment:"Barbell", sets:[{weight:130,reps:10},{weight:130,reps:12},{weight:130,reps:10}] },
+    { name:"Tricep Extension", equipment:"Machine", sets:[{weight:31,reps:15},{weight:35,reps:13},{weight:35,reps:8}] },
+  ]},
+  { date:"2026-04-02", plan:"Upper 2", exercises:[
+    { name:"Hip Thrusts", equipment:"Machine", sets:[{weight:80,reps:8},{weight:80,reps:8},{weight:60,reps:10}] },
+    { name:"Pull Ups (Weighted)", equipment:"Belt", sets:[{weight:20,reps:6},{weight:20,reps:6},{weight:20,reps:5.5},{weight:10,reps:8.5}] },
+    { name:"T-Row / DB Row", equipment:"DB", sets:[{weight:40,reps:8},{weight:40,reps:9},{weight:40,reps:9}] },
+    { name:"Bulgarian Split Squat", equipment:"DB", sets:[{weight:12.5,reps:8},{weight:15,reps:8},{weight:20,reps:8}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:17.5,reps:9},{weight:17.5,reps:8},{weight:15,reps:7}] },
+  ]},
+  { date:"2026-04-07", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:110,reps:5},{weight:105,reps:6},{weight:105,reps:5}] },
+    { name:"Incline Bench Press", equipment:"Barbell", sets:[{weight:80,reps:8},{weight:80,reps:7},{weight:80,reps:5}] },
+    { name:"Shoulder Press", equipment:"Barbell", sets:[{weight:16,reps:10},{weight:16,reps:10},{weight:16,reps:10}] },
+    { name:"Shoulder Shrugs", equipment:"Barbell", sets:[{weight:120,reps:15},{weight:140,reps:15},{weight:140,reps:12}] },
+    { name:"Tricep Extension", equipment:"Machine", sets:[{weight:31,reps:12},{weight:31,reps:12},{weight:31,reps:12}] },
+  ]},
+  { date:"2026-04-09", plan:"Upper 2", exercises:[
+    { name:"Back Squat", equipment:"Barbell", sets:[{weight:120,reps:8},{weight:120,reps:8},{weight:120,reps:8}] },
+    { name:"Pull Ups (Weighted)", equipment:"Belt", sets:[{weight:20,reps:6},{weight:20,reps:6},{weight:10,reps:9}] },
+    { name:"Hip Thrusts", equipment:"Machine", sets:[{weight:80,reps:6},{weight:80,reps:6},{weight:80,reps:6}] },
+    { name:"T-Row / DB Row", equipment:"Machine", sets:[{weight:42.5,reps:8},{weight:42.5,reps:8},{weight:42.5,reps:8}] },
+    { name:"Bulgarian Split Squat", equipment:"DB", sets:[{weight:22.5,reps:8},{weight:22.5,reps:8},{weight:22.5,reps:6}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:17.5,reps:8},{weight:17.5,reps:8},{weight:17.5,reps:8}] },
+  ]},
+  { date:"2026-04-14", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:110,reps:8},{weight:110,reps:6},{weight:110,reps:5}] },
+    { name:"Pull Ups (Weighted)", equipment:"Belt", sets:[{weight:20,reps:8},{weight:20,reps:7},{weight:20,reps:5}] },
+    { name:"Incline Bench Press", equipment:"Barbell", sets:[{weight:80,reps:8},{weight:80,reps:5},{weight:70,reps:8}] },
+    { name:"T-Row / DB Row", equipment:"Machine", sets:[{weight:45,reps:12},{weight:45,reps:12},{weight:60,reps:8}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:18,reps:8},{weight:16,reps:10},{weight:16,reps:8}] },
+    { name:"Tricep Extension", equipment:"Machine", sets:[{weight:31.5,reps:8},{weight:24.5,reps:12},{weight:28,reps:10}] },
+  ]},
+  { date:"2026-04-21", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:110,reps:8},{weight:110,reps:5},{weight:100,reps:8}] },
+    { name:"Pull Ups (Weighted)", equipment:"Belt", sets:[{weight:20,reps:7},{weight:20,reps:7},{weight:20,reps:10}] },
+    { name:"Incline Bench Press", equipment:"Barbell", sets:[{weight:80,reps:8},{weight:80,reps:6},{weight:80,reps:8}] },
+    { name:"T-Row / DB Row", equipment:"Machine", sets:[{weight:55,reps:12},{weight:65,reps:9},{weight:65,reps:10}] },
+    { name:"Chest Fly", equipment:"Machine", sets:[{weight:87,reps:9},{weight:88,reps:8},{weight:88,reps:8}] },
+    { name:"Rear Deltoid", equipment:"Machine", sets:[{weight:65,reps:10},{weight:62,reps:9},{weight:65,reps:8}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:18,reps:10},{weight:18,reps:9},{weight:18,reps:7}] },
+    { name:"Tricep Extension", equipment:"Machine", sets:[{weight:31.5,reps:10},{weight:31.5,reps:7},{weight:24.5,reps:12}] },
+  ]},
+  { date:"2026-04-23", plan:"Lower 1", exercises:[
+    { name:"Back Squat", equipment:"Barbell", sets:[{weight:120,reps:10},{weight:120,reps:10},{weight:120,reps:8}] },
+    { name:"RDL", equipment:"Barbell", sets:[{weight:100,reps:8},{weight:100,reps:8},{weight:120,reps:6}] },
+    { name:"Shoulder Shrugs", equipment:"Barbell", sets:[{weight:120,reps:10},{weight:120,reps:15},{weight:120,reps:10}] },
+    { name:"Bulgarian Split Squat", equipment:"DB", sets:[{weight:26.4,reps:8},{weight:26.4,reps:8},{weight:26.4,reps:8}] },
+    { name:"Shoulder Press", equipment:"DB", sets:[{weight:17.5,reps:13},{weight:20,reps:10},{weight:20,reps:14}] },
+    { name:"Hip Thrusts", equipment:"Machine", sets:[{weight:20,reps:12},{weight:20,reps:10},{weight:20,reps:10}] },
+  ]},
+  { date:"2026-04-26", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:115,reps:6},{weight:115,reps:6},{weight:110,reps:6}] },
+    { name:"Pull Ups (Weighted)", equipment:"Belt", sets:[{weight:20,reps:8},{weight:20,reps:6},{weight:20,reps:10}] },
+    { name:"Incline Bench Press", equipment:"Barbell", sets:[{weight:80,reps:8},{weight:80,reps:7},{weight:80,reps:7}] },
+    { name:"T-Row / DB Row", equipment:"Machine", sets:[{weight:87,reps:12},{weight:97,reps:9},{weight:87,reps:9}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:18,reps:10},{weight:18,reps:10},{weight:18,reps:10}] },
+    { name:"Tricep Extension", equipment:"Machine", sets:[{weight:31.5,reps:8},{weight:31.5,reps:8},{weight:24.5,reps:8}] },
+  ]},
+  { date:"2026-04-28", plan:"Lower 1", exercises:[
+    { name:"Back Squat", equipment:"Barbell", sets:[{weight:130,reps:8},{weight:130,reps:8},{weight:130,reps:8}] },
+    { name:"RDL", equipment:"Barbell", sets:[{weight:110,reps:8},{weight:110,reps:8},{weight:110,reps:8}] },
+    { name:"Shoulder Shrugs", equipment:"Barbell", sets:[{weight:130,reps:15},{weight:130,reps:15},{weight:140,reps:15}] },
+    { name:"Bulgarian Split Squat", equipment:"DB", sets:[{weight:26.4,reps:8},{weight:26.4,reps:8},{weight:26.4,reps:8}] },
+    { name:"Shoulder Press", equipment:"DB", sets:[{weight:17.5,reps:16},{weight:17.5,reps:15},{weight:17.5,reps:12}] },
+  ]},
+  { date:"2026-05-10", plan:"Upper 1", exercises:[
+    { name:"Bench Press", equipment:"Barbell", sets:[{weight:110,reps:6},{weight:110,reps:3},{weight:100,reps:6}] },
+    { name:"Pull Ups (Weighted)", equipment:"Belt", sets:[{weight:10,reps:8},{weight:15,reps:6},{weight:15,reps:10}] },
+    { name:"Incline Bench Press", equipment:"Barbell", sets:[{weight:80,reps:8},{weight:80,reps:7},{weight:80,reps:7}] },
+    { name:"T-Row / DB Row", equipment:"Machine", sets:[{weight:87,reps:12},{weight:97,reps:9},{weight:87,reps:9}] },
+    { name:"Bicep Curls", equipment:"DB", sets:[{weight:18,reps:10},{weight:18,reps:9},{weight:18,reps:8}] },
+    { name:"Tricep Extension", equipment:"Machine", sets:[{weight:31.5,reps:12},{weight:31.5,reps:11},{weight:24.5,reps:10}] },
+  ]},
+  { date:"2026-05-13", plan:"Lower 1", exercises:[
+    { name:"Back Squat", equipment:"Barbell", sets:[{weight:110,reps:8},{weight:130,reps:6},{weight:130,reps:6}] },
+    { name:"RDL", equipment:"Barbell", sets:[{weight:120,reps:5},{weight:120,reps:8},{weight:120,reps:8}] },
+    { name:"Shoulder Shrugs", equipment:"Barbell", sets:[{weight:120,reps:15},{weight:120,reps:10},{weight:140,reps:10}] },
+    { name:"Quad Extension", equipment:"Machine", sets:[{weight:79,reps:10},{weight:93,reps:10},{weight:93,reps:8}] },
+    { name:"Hamstring Curl", equipment:"Machine", sets:[{weight:79,reps:10},{weight:93,reps:10},{weight:93,reps:8}] },
+    { name:"Abduction Machine", equipment:"Machine", sets:[{weight:125,reps:10},{weight:125,reps:10},{weight:125,reps:10}] },
+  ]},
+];
+
+// ─── DEFAULT PLAN ─────────────────────────────────────────────────────────────
+const DEFAULT_PLANS = {
+  "2 Upper 2 Lower": {
+    days: {
+      "Upper 1": [
+        { name:"Bench Press", equipment:"Barbell", supersetGroup:null, targetSets:4 },
+        { name:"Weighted Pull Ups", equipment:"Belt", supersetGroup:null, targetSets:4 },
+        { name:"Incline Bench Press", equipment:"Barbell", supersetGroup:null, targetSets:3 },
+        { name:"DB Row", equipment:"DB", supersetGroup:null, targetSets:3 },
+        { name:"Shoulder Press", equipment:"DB", supersetGroup:null, targetSets:3 },
+        { name:"Shoulder Shrugs", equipment:"Barbell", supersetGroup:null, targetSets:3 },
+        { name:"Bicep Curls", equipment:"DB", supersetGroup:null, targetSets:3 },
+        { name:"Tricep Extensions", equipment:"Cable", supersetGroup:null, targetSets:3 },
+        { name:"Deltoid Raises", equipment:"DB", supersetGroup:null, targetSets:3 },
+      ],
+      "Lower 1": [
+        { name:"Back Squat", equipment:"Barbell", supersetGroup:null, targetSets:4 },
+        { name:"Hip Thrusts", equipment:"Machine", supersetGroup:null, targetSets:3 },
+        { name:"Hamstring Curl", equipment:"Machine", supersetGroup:null, targetSets:3 },
+        { name:"Quad Extensions", equipment:"Machine", supersetGroup:null, targetSets:3 },
+        { name:"Lumbar Extension", equipment:"Machine", supersetGroup:null, targetSets:3 },
+        { name:"Leg Raises", equipment:"BW", supersetGroup:null, targetSets:3 },
+      ],
+      "Upper 2": [
+        { name:"Weighted Dips", equipment:"Belt", supersetGroup:null, targetSets:4 },
+        { name:"Weighted Chin Ups", equipment:"Belt", supersetGroup:null, targetSets:4 },
+        { name:"Chest Fly", equipment:"Machine", supersetGroup:null, targetSets:3 },
+        { name:"Rear Deltoid Fly", equipment:"Machine", supersetGroup:null, targetSets:3 },
+        { name:"T-Row", equipment:"Machine", supersetGroup:null, targetSets:3 },
+        { name:"Lat Raises", equipment:"DB", supersetGroup:null, targetSets:3 },
+        { name:"Bicep Curls", equipment:"DB", supersetGroup:null, targetSets:3 },
+        { name:"Tricep Extensions", equipment:"Cable", supersetGroup:null, targetSets:3 },
+      ],
+      "Lower 2": [
+        { name:"RDL", equipment:"Barbell", supersetGroup:null, targetSets:4 },
+        { name:"Leg Press", equipment:"Machine", supersetGroup:null, targetSets:3 },
+        { name:"Bulgarian Split Squats", equipment:"DB", supersetGroup:null, targetSets:3 },
+        { name:"Abduction Machine", equipment:"Machine", supersetGroup:null, targetSets:3 },
+        { name:"Lumbar Extension", equipment:"Machine", supersetGroup:null, targetSets:3 },
+      ],
+    }
+  }
+};
+
+const EQUIP_OPTIONS = ["Barbell","DB","Machine","Cable","Belt","BW","Band","KB","Other"];
+const SS_COLORS = {
+  1: { text:"#C05E00", bg:"#FFF0D5", border:"#F5C07A" },
+  2: { text:"#5B3FA0", bg:"#F0EBFA", border:"#C0A8E8" },
+  3: { text:"#1A6B42", bg:"#E5F7EF", border:"#8ED4B0" },
+};
+
+// ─── SMALL COMPONENTS ─────────────────────────────────────────────────────────
+function Sparkline({ data, color, chartHeight, chartWidth }) {
+  if (!data || data.length < 2) return null;
+  const values = data.map(point => point.best1rm);
+  const minVal = Math.min(...values);
+  const maxVal = Math.max(...values);
+  const range = maxVal - minVal || 1;
+  const points = values.map((val, idx) => {
+    const pointX = (idx / (values.length - 1)) * chartWidth;
+    const pointY = chartHeight - ((val - minVal) / range) * (chartHeight - 6) - 3;
+    return `${pointX},${pointY}`;
+  }).join(" ");
+  const lastParts = points.split(" ").pop().split(",");
+  return (
+    <svg width={chartWidth} height={chartHeight} style={{ display:"block", flexShrink:0 }}>
+      <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx={lastParts[0]} cy={lastParts[1]} r="3" fill={color}/>
+    </svg>
+  );
+}
+
+function Card({ children, style }) {
+  return (
+    <div style={{ background:CARD_BG, borderRadius:16, padding:16, marginBottom:12, boxShadow:"0 1px 4px rgba(0,0,0,0.06)", border:`1px solid ${MIST}`, ...style }}>
+      {children}
+    </div>
+  );
+}
+
+function SectionTitle({ children }) {
+  return <div style={{ fontWeight:700, fontSize:14, color:INK, marginBottom:4 }}>{children}</div>;
+}
+
+function SubTitle({ children }) {
+  return <div style={{ fontSize:10, color:STONE, marginBottom:10 }}>{children}</div>;
+}
+
+function Pill({ label, active, color, onPress }) {
+  return (
+    <button onClick={onPress} style={{ padding:"5px 11px", borderRadius:18, border:`1.5px solid ${active ? color : MIST}`, background:active ? color : "none", color:active ? WHITE : SLATE, fontSize:10, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN, whiteSpace:"nowrap" }}>
+      {label}
+    </button>
+  );
+}
+
+function EquipChips({ selected, onChange, small }) {
+  return (
+    <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+      {EQUIP_OPTIONS.slice(0, -1).map(equip => (
+        <button key={equip} onClick={() => onChange(equip)} style={{ padding: small ? "1px 5px" : "2px 7px", borderRadius:8, fontSize: small ? 8 : 9, fontWeight:500, cursor:"pointer", fontFamily:FONT_MAIN, background:selected===equip ? INK : FOG, color:selected===equip ? WHITE : SLATE, border:`1px solid ${selected===equip ? INK : MIST}` }}>
+          {equip}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+export default function App() {
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [sessions, setSessions] = useState([]);
+  const [goals, setGoals] = useState(DEFAULT_GOAL);
+  const [bodyweight, setBodyweight] = useState(98);
+  const [plans, setPlans] = useState(DEFAULT_PLANS);
+  const [activePlanName, setActivePlanName] = useState("2 Upper 2 Lower");
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [logPlanDay, setLogPlanDay] = useState(null);
+  const [logExercises, setLogExercises] = useState([]);
+  const [logDate, setLogDate] = useState(todayStr());
+  const [logSaved, setLogSaved] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPlanPicker, setShowPlanPicker] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const savedSessions = await storageGet("wt_v6_sessions");
+      const savedGoals = await storageGet("wt_v6_goals");
+      const savedBW = await storageGet("wt_v6_bw");
+      const savedPlans = await storageGet("wt_v6_plans");
+      const savedActivePlan = await storageGet("wt_v6_activeplan");
+      setSessions(savedSessions && savedSessions.length ? savedSessions : HISTORICAL);
+      if (!savedSessions || !savedSessions.length) await storageSet("wt_v6_sessions", HISTORICAL);
+      if (savedGoals) setGoals(savedGoals);
+      if (savedBW) setBodyweight(savedBW);
+      if (savedPlans) setPlans(savedPlans);
+      if (savedActivePlan) setActivePlanName(savedActivePlan);
+      setIsLoaded(true);
+    })();
+  }, []);
+
+  const saveSessions = useCallback(async (updated) => {
+    setSessions(updated);
+    await storageSet("wt_v6_sessions", updated);
+  }, []);
+
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(""), 2500);
+  };
+
+  const activeDays = plans[activePlanName]?.days || {};
+
+  if (!isLoaded) {
+    return (
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:SKY, flexDirection:"column", gap:12 }}>
+        <div style={{ fontSize:40 }}>☁️</div>
+        <div style={{ color:SLATE, fontSize:14 }}>Loading…</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth:480, margin:"0 auto", minHeight:"100vh", background:PAGE_BG, fontFamily:FONT_MAIN, paddingBottom:80 }}>
+      <style>{GLOBAL_CSS}</style>
+
+      {/* TOP BAR — date + controls */}
+      <div style={{ padding:"16px 20px 0", background:PAGE_BG }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+          <div>
+            <div style={{ fontSize:10, fontWeight:600, letterSpacing:"1.5px", color:STONE, textTransform:"uppercase" }}>
+              {new Date().toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long" })}
+            </div>
+            <div style={{ fontFamily:FONT_SERIF, fontSize:36, fontWeight:400, color:INK, lineHeight:1.1, marginTop:2 }}>
+              {[["dashboard","Dashboard"],["log","Log"],["history","History"],["plan","My Plan"]].find(([key]) => key === activeTab)?.[1] || "Dashboard"}
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:6, marginTop:6 }}>
+            <button onClick={() => setShowPlanPicker(true)} style={{ background:CARD_BG, border:`1px solid ${MIST}`, borderRadius:20, padding:"6px 12px", color:SLATE, fontSize:10, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN, maxWidth:120, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", boxShadow:"0 1px 3px rgba(0,0,0,0.06)" }}>
+              📋 {activePlanName} ▾
+            </button>
+            <button onClick={() => setShowSettings(true)} style={{ background:CARD_BG, border:`1px solid ${MIST}`, borderRadius:20, padding:"6px 10px", color:SLATE, fontSize:13, cursor:"pointer", boxShadow:"0 1px 3px rgba(0,0,0,0.06)" }}>⚙</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ padding:"12px 0 0" }}>
+        {activeTab === "dashboard" && <DashboardTab sessions={sessions} goals={goals} bodyweight={bodyweight}/>}
+        {activeTab === "log" && (
+          <LogTab sessions={sessions} logDate={logDate} setLogDate={setLogDate} logPlanDay={logPlanDay} setLogPlanDay={setLogPlanDay} logExercises={logExercises} setLogExercises={setLogExercises} logSaved={logSaved} setLogSaved={setLogSaved} saveSessions={saveSessions} showToast={showToast} activeDays={activeDays}/>
+        )}
+        {activeTab === "history" && <HistoryTab sessions={sessions} saveSessions={saveSessions} showToast={showToast}/>}
+        {activeTab === "plan" && <PlanTab plans={plans} activePlanName={activePlanName} onSavePlans={async (updated) => { setPlans(updated); await storageSet("wt_v6_plans", updated); showToast("✓ Plan saved!"); }} showToast={showToast}/>}
+      </div>
+
+      {showSettings && (
+        <SettingsModal goals={goals} bodyweight={bodyweight} onClose={async (newGoals, newBW) => {
+          setGoals(newGoals); setBodyweight(newBW);
+          await storageSet("wt_v6_goals", newGoals);
+          await storageSet("wt_v6_bw", newBW);
+          setShowSettings(false);
+        }}/>
+      )}
+      {showPlanPicker && (
+        <PlanPickerModal plans={plans} activePlanName={activePlanName} onSelect={async (name) => {
+          setActivePlanName(name); await storageSet("wt_v6_activeplan", name);
+          setShowPlanPicker(false); showToast(`Switched to ${name}`);
+        }} onClose={() => setShowPlanPicker(false)}/>
+      )}
+      {toastMsg && (
+        <div style={{ position:"fixed", bottom:90, left:"50%", transform:"translateX(-50%)", background:INK, color:WHITE, padding:"9px 18px", borderRadius:22, fontSize:12, fontWeight:500, zIndex:300, whiteSpace:"nowrap", boxShadow:"0 4px 20px rgba(0,0,0,0.2)" }}>
+          {toastMsg}
+        </div>
+      )}
+
+      {/* BOTTOM TAB BAR — cycle app style */}
+      <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:CARD_BG, borderTop:`1px solid ${MIST}`, display:"flex", zIndex:100, paddingBottom:"env(safe-area-inset-bottom)" }}>
+        {[
+          ["dashboard","🏠","Home"],
+          ["log","✏️","Log"],
+          ["history","📖","History"],
+          ["plan","📋","My Plan"],
+        ].map(([key, icon, label]) => (
+          <button key={key} onClick={() => setActiveTab(key)} style={{ flex:1, padding:"10px 4px 8px", border:"none", background:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:2, fontFamily:FONT_MAIN }}>
+            <span style={{ fontSize:20, lineHeight:1 }}>{icon}</span>
+            <span style={{ fontSize:9, fontWeight:activeTab===key ? 700 : 500, color:activeTab===key ? INK : STONE, letterSpacing:"0.3px" }}>{label}</span>
+            {activeTab===key && <div style={{ width:4, height:4, borderRadius:"50%", background:INK, marginTop:1 }}/>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+function DashboardTab({ sessions, goals, bodyweight }) {
+  const currentWeek = getWeekStart(todayStr());
+  const allWeeks = getAllWeekStarts(sessions);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedExercise, setSelectedExercise] = useState(null);
+  const [popupCell, setPopupCell] = useState(null); // {muscle, weekStart}
+
+  const totalSessions = sessions.length;
+  const firstDate = sessions.length ? sessions[0].date : null;
+  const weeksActive = firstDate ? Math.ceil((new Date() - new Date(firstDate)) / (7 * 86400000)) : 0;
+  const streak = calcStreak(sessions);
+  const prs = calcPRs(sessions, bodyweight);
+  const allExercises = getAllExerciseNames(sessions);
+  const keyLifts = ["Bench Press","Back Squat","Pull Ups (Weighted)","RDL","Incline Bench Press"];
+
+  const lastIdx = allWeeks.length - 1;
+  const endIdx = Math.max(5, lastIdx - weekOffset * 3);
+  const tableWeeks = allWeeks.slice(Math.max(0, endIdx - 5), endIdx + 1);
+  while (tableWeeks.length < 6) tableWeeks.unshift(null);
+  const volByWeek = {};
+  tableWeeks.forEach(weekStart => { if (weekStart) volByWeek[weekStart] = calcWeekVolume(sessions, weekStart); });
+  const canGoBack = weekOffset * 3 < allWeeks.length - 6;
+  const canGoFwd = weekOffset > 0;
+
+  // 5-level colour scale
+  function volColor(pct) {
+    if (pct <= 0) return VOL_NONE;
+    if (pct < 0.3) return VOL_LOW;
+    if (pct < 0.6) return VOL_MED;
+    if (pct < 1.0) return VOL_GOOD;
+    return VOL_GREAT;
+  }
+  function volTextColor(pct) {
+    if (pct <= 0) return PEBBLE;
+    if (pct < 0.3) return "#8B3A2A";
+    return WHITE;
+  }
+
+  // Get exercise breakdown for a muscle in a given week
+  function getExerciseBreakdown(muscle, weekStart) {
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    const weekEndStr = weekEnd.toISOString().split("T")[0];
+    const breakdown = {};
+    sessions
+      .filter(session => session.date >= weekStart && session.date < weekEndStr)
+      .forEach(session => {
+        session.exercises.forEach(exercise => {
+          const contributions = MUSCLE_MAP[exercise.name] || {};
+          if (contributions[muscle]) {
+            const effectiveSets = exercise.sets.length * contributions[muscle];
+            breakdown[exercise.name] = (breakdown[exercise.name] || 0) + effectiveSets;
+          }
+        });
+      });
+    return Object.entries(breakdown).sort((first, second) => second[1] - first[1]);
+  }
+
+  return (
+    <div style={{ padding:"0 12px 100px" }}>
+      {/* Stats */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:12 }}>
+        {[[totalSessions+"","SESSIONS",BLUE],[weeksActive+"","WEEKS",GREEN],[streak+"","STREAK",AMBER]].map(([val, label, color]) => (
+          <Card key={label} style={{ padding:"14px 8px", textAlign:"center", marginBottom:0 }}>
+            <div style={{ fontSize:26, fontWeight:800, color, lineHeight:1 }}>{val}</div>
+            <div style={{ fontSize:9, fontWeight:600, letterSpacing:"1px", color:STONE, marginTop:4 }}>{label}</div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Volume Table */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div>
+            <SectionTitle>Weekly Volume</SectionTitle>
+            <div style={{ fontSize:10, color:STONE }}>% of weekly sets goal · tap ‹ › to browse</div>
+          </div>
+          <div style={{ display:"flex", gap:5 }}>
+            {[["‹", canGoBack, () => setWeekOffset(prev => prev + 1)],["›", canGoFwd, () => setWeekOffset(prev => prev - 1)]].map(([label, enabled, action]) => (
+              <button key={label} onClick={() => enabled && action()} style={{ width:26, height:26, borderRadius:6, border:`1.5px solid ${MIST}`, background:"none", color:enabled ? BLUE : PEBBLE, fontSize:14, cursor:enabled ? "pointer" : "default", fontWeight:700 }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed" }}>
+            <colgroup>
+              <col style={{ width:"22%" }}/>
+              {tableWeeks.map((_, idx) => <col key={idx} style={{ width:`${78/6}%` }}/>)}
+            </colgroup>
+            <thead>
+              <tr>
+                <th style={{ padding:"3px 4px", fontWeight:700, color:STONE, fontSize:8, textAlign:"left" }}>Muscle</th>
+                {tableWeeks.map((weekStart, idx) => (
+                  <th key={idx} style={{ padding:"3px 2px", textAlign:"center", fontWeight:weekStart===currentWeek ? 700 : 500, color:weekStart===currentWeek ? BLUE : STONE, fontSize:8 }}>
+                    {weekStart ? shortWeekLabel(weekStart) : "—"}
+                    {weekStart === currentWeek && <div style={{ width:4, height:4, borderRadius:"50%", background:BLUE, margin:"1px auto 0" }}/>}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {MUSCLES.map(muscle => {
+                const goal = goals[muscle] || 12;
+                return (
+                  <tr key={muscle}>
+                    <td style={{ padding:"2px 4px", fontWeight:600, color:SLATE, fontSize:9, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                      {MUSCLE_LABEL[muscle]}
+                    </td>
+                    {tableWeeks.map((weekStart, idx) => {
+                      if (!weekStart) return <td key={idx} style={{ padding:"2px 1px" }}><div style={{ height:22, borderRadius:5, background:VOL_NONE }}/></td>;
+                      const vol = volByWeek[weekStart]?.[muscle] || 0;
+                      const pct = goal > 0 ? vol / goal : 0;
+                      const bgColor = volColor(pct);
+                      const textColor = volTextColor(pct);
+                      const isActive = popupCell?.muscle === muscle && popupCell?.weekStart === weekStart;
+                      return (
+                        <td key={idx} style={{ padding:"2px 1px" }}>
+                          <div onClick={() => setPopupCell(isActive ? null : { muscle, weekStart })}
+                            style={{ background:bgColor, borderRadius:5, height:22, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", outline:isActive ? `2px solid ${INK}` : "none", outlineOffset:-1 }}>
+                            <span style={{ color:textColor, fontWeight:700, fontSize:8, fontFamily:FONT_MONO }}>
+                              {vol > 0 ? `${Math.round(pct*100)}%` : "—"}
+                            </span>
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Popup breakdown */}
+        {popupCell && (() => {
+          const breakdown = getExerciseBreakdown(popupCell.muscle, popupCell.weekStart);
+          const goal = goals[popupCell.muscle] || 12;
+          const totalVol = breakdown.reduce((sum, [, val]) => sum + val, 0);
+          return (
+            <div style={{ marginTop:10, padding:"10px 12px", background:FOG, borderRadius:10, border:`1px solid ${MIST}` }}>
+              <div style={{ fontWeight:700, fontSize:11, color:INK, marginBottom:6 }}>
+                {MUSCLE_LABEL[popupCell.muscle]} · {shortWeekLabel(popupCell.weekStart)} · {Math.round(totalVol)}/{goal} sets
+              </div>
+              {breakdown.length === 0
+                ? <div style={{ fontSize:10, color:STONE, fontStyle:"italic" }}>No sessions this week</div>
+                : breakdown.map(([name, sets]) => (
+                    <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                      <span style={{ fontSize:10, color:SLATE }}>{name}</span>
+                      <span style={{ fontSize:10, fontWeight:700, color:INK, fontFamily:FONT_MONO }}>{Math.round(sets * 10) / 10} sets</span>
+                    </div>
+                  ))
+              }
+            </div>
+          );
+        })()}
+
+        {/* 5-level legend */}
+        <div style={{ display:"flex", gap:8, marginTop:10, flexWrap:"wrap", alignItems:"center" }}>
+          {[[VOL_NONE,"None"],[VOL_LOW,"<30%"],[VOL_MED,"30-60%"],[VOL_GOOD,"60-99%"],[VOL_GREAT,"≥ Goal"]].map(([color, label]) => (
+            <div key={label} style={{ display:"flex", alignItems:"center", gap:3 }}>
+              <div style={{ width:10, height:10, borderRadius:3, background:color, border:`1px solid ${MIST}` }}/>
+              <span style={{ fontSize:8, color:STONE }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Key Lifts */}
+      <Card>
+        <SectionTitle>Key Lift Progress</SectionTitle>
+        <SubTitle>Epley estimated 1RM — tap to expand</SubTitle>
+        {keyLifts.map(liftName => {
+          const history = getExerciseHistory(sessions, liftName, bodyweight);
+          if (!history.length) return null;
+          const firstEntry = history[0];
+          const bestEntry = history.reduce((best, cur) => cur.best1rm > best.best1rm ? cur : best);
+          const growth = firstEntry.best1rm > 0 ? Math.round((bestEntry.best1rm - firstEntry.best1rm) / firstEntry.best1rm * 100) : 0;
+          const isOpen = selectedExercise === liftName;
+          return (
+            <div key={liftName} onClick={() => setSelectedExercise(isOpen ? null : liftName)}
+              style={{ padding:"9px 11px", background:isOpen ? FOG : SKY, borderRadius:10, cursor:"pointer", border:`1.5px solid ${isOpen ? BLUE : "transparent"}`, marginBottom:7 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
+                <div style={{ fontWeight:600, fontSize:12, color:INK }}>{liftName}</div>
+                <div style={{ fontSize:11, fontWeight:700, color:growth >= 0 ? GREEN : CORAL }}>{growth >= 0 ? "+" : ""}{growth}%</div>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end" }}>
+                <div>
+                  <div style={{ fontSize:9, color:STONE }}>Start → Best</div>
+                  <div style={{ fontSize:11, fontFamily:FONT_MONO, color:SLATE }}>
+                    {firstEntry.best1rm}kg → <span style={{ color:BLUE, fontWeight:700 }}>{bestEntry.best1rm}kg</span>
+                  </div>
+                </div>
+                <Sparkline data={history} color={BLUE} chartHeight={28} chartWidth={70}/>
+              </div>
+              {isOpen && (
+                <div style={{ marginTop:8, paddingTop:8, borderTop:`1px solid ${MIST}`, display:"flex", gap:4, overflowX:"auto", paddingBottom:2 }}>
+                  {history.map((entry, entryIdx) => (
+                    <div key={entryIdx} style={{ flex:"0 0 auto", background:WHITE, borderRadius:7, padding:"3px 7px" }}>
+                      <div style={{ fontSize:8, color:STONE, fontFamily:FONT_MONO }}>{entry.date.slice(5).replace("-",".")}</div>
+                      <div style={{ fontWeight:700, color:BLUE, fontSize:11 }}>{entry.best1rm}kg</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </Card>
+
+      {/* Exercise Explorer */}
+      <Card>
+        <SectionTitle>Exercise Explorer</SectionTitle>
+        <SubTitle>Tap any to see full history</SubTitle>
+        <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+          {allExercises.map(item => (
+            <button key={item.name} onClick={() => setSelectedExercise(item.name === selectedExercise ? null : item.name)}
+              style={{ padding:"4px 9px", borderRadius:16, border:`1.5px solid ${selectedExercise===item.name ? BLUE : MIST}`, background:selectedExercise===item.name ? BLUE : FOG, color:selectedExercise===item.name ? WHITE : SLATE, fontSize:10, fontWeight:500, cursor:"pointer", fontFamily:FONT_MAIN }}>
+              {item.name} <span style={{ opacity:0.6, fontSize:9 }}>×{item.count}</span>
+            </button>
+          ))}
+        </div>
+        {selectedExercise && !keyLifts.includes(selectedExercise) && (() => {
+          const history = getExerciseHistory(sessions, selectedExercise, bodyweight);
+          if (!history.length) return <div style={{ marginTop:8, color:STONE, fontSize:11 }}>No data yet</div>;
+          const bestEntry = history.reduce((best, cur) => cur.best1rm > best.best1rm ? cur : best);
+          const growth = history[0].best1rm > 0 ? Math.round((bestEntry.best1rm - history[0].best1rm) / history[0].best1rm * 100) : 0;
+          return (
+            <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${MIST}` }}>
+              <div style={{ fontWeight:700, fontSize:12, color:INK, marginBottom:8 }}>{selectedExercise}</div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6, marginBottom:8 }}>
+                {[["SESSIONS",history.length,BLUE],["BEST 1RM",bestEntry.best1rm+"kg",GREEN],["GROWTH",`${growth>=0?"+":""}${growth}%`,growth>=0?GREEN:CORAL]].map(([label, val, color]) => (
+                  <div key={label} style={{ background:FOG, borderRadius:8, padding:"7px", textAlign:"center" }}>
+                    <div style={{ fontSize:14, fontWeight:800, color }}>{val}</div>
+                    <div style={{ fontSize:8, color:STONE }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display:"flex", gap:4, overflowX:"auto", paddingBottom:4 }}>
+                {history.map((entry, idx) => (
+                  <div key={idx} style={{ flex:"0 0 auto", background:FOG, borderRadius:7, padding:"5px 7px", minWidth:60 }}>
+                    <div style={{ fontSize:8, color:STONE, fontFamily:FONT_MONO }}>{entry.date.slice(5).replace("-",".")}</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:BLUE }}>{entry.best1rm}kg</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+      </Card>
+
+      {/* PRs */}
+      <Card>
+        <SectionTitle>🏆 Personal Records</SectionTitle>
+        <div style={{ marginTop:4 }}>
+          {Object.entries(prs).sort((first, second) => second[1].rm - first[1].rm).slice(0, 12).map(([name, record]) => (
+            <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 9px", background:FOG, borderRadius:9, marginBottom:5 }}>
+              <div>
+                <div style={{ fontSize:12, fontWeight:600, color:INK }}>{name}</div>
+                <div style={{ fontSize:9, color:STONE }}>{record.weight}kg × {record.reps} · {record.date}</div>
+              </div>
+              <div style={{ fontSize:14, fontWeight:800, color:GOLD, fontFamily:FONT_MONO }}>{record.rm}kg</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─── LOG TAB ──────────────────────────────────────────────────────────────────
+function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logExercises, setLogExercises, logSaved, setLogSaved, saveSessions, showToast, activeDays }) {
+  const [showCSV, setShowCSV] = useState(false);
+
+  const startPlan = (dayName) => {
+    setLogPlanDay(dayName);
+    setLogSaved(false);
+    const planExercises = activeDays[dayName] || [];
+    const lastMatch = [...sessions].reverse().find(session =>
+      session.exercises.some(ex => planExercises.find(planEx => planEx.name === ex.name))
+    );
+    setLogExercises(planExercises.map(planEx => {
+      const lastEx = lastMatch?.exercises.find(ex => ex.name === planEx.name);
+      const targetSets = planEx.targetSets || 3;
+      // Pre-fill the target number of empty set rows
+      const emptySets = Array.from({ length: targetSets }, () => ({ weight:"", reps:"" }));
+      return {
+        name: planEx.name,
+        equipment: planEx.equipment,
+        skipped: false,
+        sets: emptySets,
+        supersetGroup: planEx.supersetGroup || null,
+        lastSets: lastEx?.sets || null,
+        lastDate: lastMatch?.date || null,
+      };
+    }));
+  };
+
+  const startFree = () => {
+    setLogPlanDay("Free Session");
+    setLogSaved(false);
+    setLogExercises([{ name:"", equipment:"Barbell", skipped:false, sets:[{weight:"",reps:""}], lastSets:null, lastDate:null }]);
+  };
+
+  const updateExSet = (exIdx, setIdx, field, value) => {
+    setLogExercises(prev => prev.map((exercise, idx) => idx !== exIdx ? exercise : {
+      ...exercise, sets: exercise.sets.map((setItem, sidx) => sidx !== setIdx ? setItem : { ...setItem, [field]: value })
+    }));
+  };
+  const addExSet = (exIdx) => setLogExercises(prev => prev.map((exercise, idx) => idx !== exIdx ? exercise : { ...exercise, sets:[...exercise.sets, {weight:"",reps:""}] }));
+  const removeExSet = (exIdx, setIdx) => setLogExercises(prev => prev.map((exercise, idx) => idx !== exIdx ? exercise : { ...exercise, sets:exercise.sets.length > 1 ? exercise.sets.filter((_, sidx) => sidx !== setIdx) : exercise.sets }));
+  const toggleSkip = (exIdx) => setLogExercises(prev => prev.map((exercise, idx) => idx !== exIdx ? exercise : { ...exercise, skipped:!exercise.skipped }));
+  const updateEquip = (exIdx, equip) => setLogExercises(prev => prev.map((exercise, idx) => idx !== exIdx ? exercise : { ...exercise, equipment:equip }));
+  const updateName = (exIdx, name) => setLogExercises(prev => prev.map((exercise, idx) => idx !== exIdx ? exercise : { ...exercise, name }));
+  const addFreeExercise = () => setLogExercises(prev => [...prev, { name:"", equipment:"Barbell", skipped:false, sets:[{weight:"",reps:""}], lastSets:null, lastDate:null }]);
+
+  const getValidExercises = () => logExercises
+    .filter(exercise => !exercise.skipped && exercise.sets.some(setItem => setItem.weight || setItem.reps))
+    .map(exercise => ({
+      name: exercise.name,
+      equipment: exercise.equipment,
+      sets: exercise.sets.filter(setItem => setItem.weight || setItem.reps).map(setItem => ({ weight:parseFloat(setItem.weight)||0, reps:parseFloat(setItem.reps)||0 }))
+    }));
+
+  const handleSave = async () => {
+    const validExercises = getValidExercises();
+    if (!validExercises.length) { showToast("Add some sets first!"); return; }
+    const newSession = { date:logDate, plan:logPlanDay, type:inferSessionType(validExercises), exercises:validExercises };
+    const updated = [...sessions.filter(session => !(session.date === logDate && session.plan === logPlanDay)), newSession].sort((first, second) => first.date.localeCompare(second.date));
+    await saveSessions(updated);
+    setLogSaved(true);
+    showToast("✓ Session saved!");
+  };
+
+  const buildCSV = () => {
+    const rows = [["Date","Plan","Exercise","Equipment","S1W","S1R","S2W","S2R","S3W","S3R","S4W","S4R"].join(",")];
+    logExercises.forEach(exercise => {
+      if (exercise.skipped) return;
+      const validSets = exercise.sets.filter(setItem => setItem.weight || setItem.reps);
+      if (!validSets.length) return;
+      const cells = [logDate, logPlanDay || "", `"${exercise.name}"`, exercise.equipment];
+      for (let setIdx = 0; setIdx < 4; setIdx++) {
+        cells.push(validSets[setIdx]?.weight || "");
+        cells.push(validSets[setIdx]?.reps || "");
+      }
+      rows.push(cells.join(","));
+    });
+    return rows.join("\n");
+  };
+
+  const isUpper = logPlanDay?.toLowerCase().includes("upper");
+
+  return (
+    <div style={{ padding:"12px 12px 120px" }}>
+      {/* Day selector */}
+      <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:10 }}>
+        {Object.keys(activeDays).map(dayName => {
+          const isUp = dayName.toLowerCase().includes("upper");
+          const isActive = logPlanDay === dayName;
+          return (
+            <button key={dayName} onClick={() => startPlan(dayName)} style={{ flex:"1 1 auto", padding:"8px 6px", borderRadius:9, border:`1.5px solid ${isActive ? (isUp ? BLUE : GREEN) : MIST}`, background:isActive ? (isUp ? BLUE : GREEN) : WHITE, color:isActive ? WHITE : SLATE, fontFamily:FONT_MAIN, fontSize:10, fontWeight:600, cursor:"pointer" }}>
+              {dayName}
+            </button>
+          );
+        })}
+        <button onClick={startFree} style={{ flex:"1 1 auto", padding:"8px 6px", borderRadius:9, border:`1.5px solid ${logPlanDay==="Free Session" ? AMBER : MIST}`, background:logPlanDay==="Free Session" ? "#FFF4E0" : WHITE, color:logPlanDay==="Free Session" ? AMBER : SLATE, fontFamily:FONT_MAIN, fontSize:10, fontWeight:600, cursor:"pointer" }}>
+          🎲 Free
+        </button>
+      </div>
+
+      {!logPlanDay && (
+        <div style={{ textAlign:"center", padding:"50px 20px", color:STONE }}>
+          <div style={{ fontSize:36, marginBottom:10 }}>🏋️</div>
+          <div style={{ fontSize:13 }}>Select a workout to begin</div>
+        </div>
+      )}
+
+      {logPlanDay && (
+        <input type="date" value={logDate} onChange={event => setLogDate(event.target.value)}
+          style={{ width:"100%", padding:"9px 12px", borderRadius:9, border:`1.5px solid ${MIST}`, background:WHITE, fontFamily:FONT_MONO, fontSize:13, color:INK, outline:"none", marginBottom:10 }}/>
+      )}
+
+      {logExercises.map((exercise, exIdx) => {
+        const groupNum = exercise.supersetGroup || null;
+        const ssCol = groupNum ? SS_COLORS[groupNum] : null;
+        const nextEx = logExercises[exIdx + 1];
+        const showConnector = groupNum && nextEx && nextEx.supersetGroup === groupNum;
+        return (
+        <div key={exIdx} style={{ marginBottom: showConnector ? 2 : 8 }}>
+        <div style={{ background:CARD_BG, borderRadius:12, overflow:"hidden", boxShadow:"0 1px 4px rgba(0,0,0,0.06)", border:`1px solid ${ssCol ? ssCol.border : MIST}`, borderLeft:`3px solid ${ssCol ? ssCol.text : (isUpper ? BLUE : GREEN)}`, opacity:exercise.skipped ? 0.5 : 1 }}>
+          <div style={{ padding:"10px 11px 8px", borderBottom:`1px solid ${SKY}` }}>
+            <div style={{ display:"flex", gap:7, alignItems:"flex-start" }}>
+              <div style={{ fontFamily:FONT_MONO, fontSize:15, fontWeight:700, color:PEBBLE, minWidth:22, paddingTop:2 }}>{exIdx+1}</div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:5 }}>
+                  <input value={exercise.name} onChange={event => updateName(exIdx, event.target.value)} placeholder="Exercise name"
+                    style={{ flex:1, border:"none", outline:"none", background:"transparent", fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, color:INK }}/>
+                  {groupNum && <span style={{ fontSize:8, fontWeight:800, color:ssCol.text, background:ssCol.bg, padding:"1px 5px", borderRadius:3, border:`1px solid ${ssCol.border}`, flexShrink:0 }}>SS {["A","B","C"][groupNum-1]}</span>}
+                </div>
+                <EquipChips selected={exercise.equipment} onChange={equip => updateEquip(exIdx, equip)}/>
+              </div>
+              <button onClick={() => toggleSkip(exIdx)} style={{ background:"none", border:"none", color:STONE, fontSize:9, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN, textDecoration:"underline", paddingTop:2 }}>
+                {exercise.skipped ? "Undo" : "Skip"}
+              </button>
+            </div>
+          </div>
+          {exercise.lastSets && !exercise.skipped && (
+            <div style={{ padding:"6px 11px", background:FOG, borderBottom:`1px solid ${SKY}` }}>
+              <div style={{ fontSize:8, fontWeight:700, letterSpacing:"0.8px", color:STONE, marginBottom:3 }}>
+                LAST{exercise.lastDate ? ` · ${exercise.lastDate.slice(5).replace("-",".")}` : ""}
+              </div>
+              <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+                {exercise.lastSets.map((setItem, setIdx) => (
+                  <div key={setIdx} style={{ background:MIST, borderRadius:4, padding:"2px 6px", fontFamily:FONT_MONO, fontSize:9, color:SLATE }}>
+                    <span style={{ color:PEBBLE }}>S{setIdx+1} </span>{setItem.weight ? setItem.weight+"kg" : "—"}×{setItem.reps || "—"}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {!exercise.skipped && (
+            <div style={{ padding:"9px 11px" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"20px 1fr 1fr 24px", gap:4, marginBottom:4 }}>
+                {["#","Weight (kg)","Reps",""].map((header, idx) => (
+                  <div key={idx} style={{ fontSize:8, fontWeight:600, color:STONE, textAlign:"center" }}>{header}</div>
+                ))}
+              </div>
+              {exercise.sets.map((setItem, setIdx) => (
+                <div key={setIdx} style={{ display:"grid", gridTemplateColumns:"20px 1fr 1fr 24px", gap:4, marginBottom:4, alignItems:"center" }}>
+                  <div style={{ fontFamily:FONT_MONO, fontSize:12, fontWeight:600, color:PEBBLE, textAlign:"center" }}>S{setIdx+1}</div>
+                  <input type="number" inputMode="decimal" placeholder="kg" value={setItem.weight}
+                    onChange={event => updateExSet(exIdx, setIdx, "weight", event.target.value)}
+                    style={{ padding:"9px 4px", borderRadius:6, border:`1.5px solid ${MIST}`, background:FOG, fontFamily:FONT_MONO, fontSize:15, fontWeight:500, color:INK, textAlign:"center", outline:"none", width:"100%" }}/>
+                  <input type="number" inputMode="numeric" placeholder="reps" value={setItem.reps}
+                    onChange={event => updateExSet(exIdx, setIdx, "reps", event.target.value)}
+                    style={{ padding:"9px 4px", borderRadius:6, border:`1.5px solid ${MIST}`, background:FOG, fontFamily:FONT_MONO, fontSize:15, fontWeight:500, color:INK, textAlign:"center", outline:"none", width:"100%" }}/>
+                  <button onClick={() => removeExSet(exIdx, setIdx)} style={{ width:24, height:24, borderRadius:"50%", border:`1.5px solid ${MIST}`, background:"none", color:STONE, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+                </div>
+              ))}
+              <button onClick={() => addExSet(exIdx)} style={{ width:"100%", marginTop:3, padding:"6px", borderRadius:6, border:`1.5px dashed ${MIST}`, background:"none", color:STONE, fontSize:10, fontWeight:500, cursor:"pointer", fontFamily:FONT_MAIN }}>+ Add Set</button>
+            </div>
+          )}
+          {exercise.skipped && <div style={{ padding:"10px", textAlign:"center", fontSize:11, color:STONE, fontStyle:"italic" }}>Skipped</div>}
+        </div>
+        {showConnector && (
+          <div style={{ display:"flex", alignItems:"center", marginLeft:14, marginBottom:2 }}>
+            <div style={{ width:2, height:8, background:ssCol.border, borderRadius:1, marginRight:5 }}/>
+            <span style={{ fontSize:8, color:ssCol.text, fontWeight:700 }}>Superset {["A","B","C"][groupNum-1]}</span>
+          </div>
+        )}
+        </div>
+        );
+      })}
+
+      {logPlanDay === "Free Session" && logExercises.length > 0 && (
+        <button onClick={addFreeExercise} style={{ width:"100%", padding:"10px", borderRadius:10, border:`1.5px dashed ${AMBER}`, background:"none", color:AMBER, fontFamily:FONT_MAIN, fontSize:12, fontWeight:600, cursor:"pointer", marginBottom:8 }}>
+          + Add Exercise
+        </button>
+      )}
+
+      {logPlanDay && (
+        <div style={{ display:"flex", gap:7, marginTop:4 }}>
+          <button onClick={handleSave} style={{ flex:1, padding:"13px", borderRadius:11, border:"none", background:logSaved ? GREEN : `linear-gradient(135deg,${BLUEDARK},${BLUE})`, color:WHITE, fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, cursor:"pointer", transition:"background 0.3s" }}>
+            {logSaved ? "✓ Saved" : "Save Session"}
+          </button>
+          <button onClick={() => setShowCSV(true)} style={{ padding:"13px 14px", borderRadius:11, border:`1.5px solid ${MIST}`, background:WHITE, color:SLATE, fontFamily:FONT_MAIN, fontSize:12, fontWeight:500, cursor:"pointer" }}>CSV</button>
+        </div>
+      )}
+
+      {showCSV && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"flex-end" }} onClick={event => event.target === event.currentTarget && setShowCSV(false)}>
+          <div style={{ background:WHITE, borderRadius:"16px 16px 0 0", width:"100%", padding:"20px 16px 36px", maxHeight:"70vh", overflowY:"auto" }}>
+            <div style={{ width:32, height:4, background:MIST, borderRadius:2, margin:"0 auto 16px" }}/>
+            <div style={{ fontWeight:800, fontSize:17, marginBottom:3 }}>Export CSV</div>
+            <div style={{ fontSize:10, color:STONE, marginBottom:12 }}>Paste into Log Import tab in Excel</div>
+            <div style={{ background:FOG, borderRadius:9, border:`1.5px solid ${MIST}`, padding:11, fontFamily:FONT_MONO, fontSize:9, color:SLATE, wordBreak:"break-all", lineHeight:1.6, marginBottom:12, whiteSpace:"pre-wrap" }}>{buildCSV()}</div>
+            <div style={{ display:"flex", gap:7 }}>
+              <button onClick={() => { navigator.clipboard.writeText(buildCSV()).catch(() => {}); setShowCSV(false); showToast("✓ Copied!"); }}
+                style={{ flex:1, padding:"12px", borderRadius:10, border:"none", background:INK, color:WHITE, fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, cursor:"pointer" }}>Copy</button>
+              <button onClick={() => setShowCSV(false)} style={{ padding:"12px 14px", borderRadius:10, border:`1.5px solid ${MIST}`, background:"none", color:SLATE, fontSize:11, cursor:"pointer", fontFamily:FONT_MAIN }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── EXERCISE NAME MATCHING ────────────────────────────────────────────────────
+const CANONICAL_EXERCISES = [
+  "Bench Press","Incline Bench Press","Chest Fly","Weighted Dips",
+  "Pull Ups (Weighted)","Weighted Chin Ups","T-Row / DB Row","Rear Deltoid","Rear Deltoid Fly",
+  "Shoulder Press","Shoulder Shrugs","Cable Deltoid Raise","Deltoid Raises","Lat Raises",
+  "Bicep Curls","Tricep Extensions","Tricep Extension",
+  "Back Squat","RDL","Hamstring Curl","Quad Extension","Quad Extensions",
+  "Hip Thrusts","Hip Extensions","Bulgarian Split Squat","Bulgarian Split Squats",
+  "Dumbbell Lunges","Leg Press","Abduction Machine","Adduction Machine",
+  "Lumbar Extension","Leg Raises","Deadlift",
+  "Pull-Ups","Seated Row","Reverse Fly","Lateral Raises",
+];
+
+const EXERCISE_ALIASES = {
+  "inclinechestpress": "Incline Bench Press",
+  "inclinepress": "Incline Bench Press",
+  "pullups": "Pull Ups (Weighted)",
+  "pullup": "Pull Ups (Weighted)",
+  "chinups": "Weighted Chin Ups",
+  "sadbrow": "T-Row / DB Row",
+  "seatedrow": "T-Row / DB Row",
+  "cablerow": "T-Row / DB Row",
+  "dbrow": "T-Row / DB Row",
+  "trow": "T-Row / DB Row",
+  "triceppushdown": "Tricep Extensions",
+  "triceppulldown": "Tricep Extensions",
+  "bicepcurl": "Bicep Curls",
+  "bicepcurlreversetwist": "Bicep Curls",
+  "reversecurl": "Bicep Curls",
+  "lumbarbackextension": "Lumbar Extension",
+  "backextension": "Lumbar Extension",
+  "legextension": "Quad Extension",
+  "quadextension": "Quad Extension",
+  "reversefly": "Rear Deltoid Fly",
+  "lateralraises": "Lat Raises",
+  "lateralraise": "Lat Raises",
+  "singlearmshoulderpress": "Shoulder Press",
+  "reverseshoulderraises": "Rear Deltoid",
+  "lateralraiseincline": "Lat Raises",
+  "hipextension": "Hip Extensions",
+  "romaniandeadlift": "RDL",
+  "squats": "Back Squat",
+  "squat": "Back Squat",
+};
+
+function fuzzyMatchExercise(input) {
+  const normStr = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const inputNorm = normStr(input);
+  const exact = CANONICAL_EXERCISES.find(name => normStr(name) === inputNorm);
+  if (exact) return exact;
+  if (EXERCISE_ALIASES[inputNorm]) return EXERCISE_ALIASES[inputNorm];
+  for (const name of CANONICAL_EXERCISES) {
+    const nameNorm = normStr(name);
+    if (inputNorm.includes(nameNorm) || nameNorm.includes(inputNorm)) return name;
+  }
+  return input;
+}
+
+// ─── HISTORY TAB ──────────────────────────────────────────────────────────────
+function HistoryTab({ sessions, saveSessions, showToast }) {
+  const sorted = [...sessions].sort((first, second) => second.date.localeCompare(first.date));
+  const [openKey, setOpenKey] = useState(null);
+  const [editKey, setEditKey] = useState(null);
+  const [editData, setEditData] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importError, setImportError] = useState("");
+
+  const sessionKey = (session) => session.date + "_" + (session.plan || "");
+
+  const startEdit = (session) => {
+    setEditKey(sessionKey(session));
+    setEditData(JSON.parse(JSON.stringify(session)));
+  };
+
+  const updateEditSet = (exIdx, setIdx, field, value) => {
+    setEditData(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.exercises[exIdx].sets[setIdx][field] = value === "" ? "" : parseFloat(value) || 0;
+      return next;
+    });
+  };
+
+  const updateEditEquip = (exIdx, equip) => {
+    setEditData(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.exercises[exIdx].equipment = equip;
+      return next;
+    });
+  };
+
+  const saveEdit = async () => {
+    const updated = sessions.map(session => sessionKey(session) === editKey ? editData : session);
+    await saveSessions(updated);
+    showToast("Updated!");
+    setEditKey(null);
+    setEditData(null);
+  };
+
+  const downloadTemplate = () => {
+    const exerciseList = CANONICAL_EXERCISES.map(name => "#   " + name).join("\n");
+    const rows = [
+      "# LIFT LOG - IMPORT TEMPLATE",
+      "# ─────────────────────────────────────────────────────────────",
+      "# INSTRUCTIONS:",
+      "# Date format: YYYY-MM-DD (e.g. 2026-06-01)",
+      "# Plan: Upper 1 / Lower 1 / Upper 2 / Lower 2 / Free Session",
+      "# Equipment: Barbell / DB / Machine / Cable / Belt / BW / Band / KB",
+      "# DB exercises: enter weight PER HAND (app doubles for 1RM calc)",
+      "# Weighted pull ups: enter ADDED weight only (not bodyweight)",
+      "# Multiple exercises per session: repeat Date and Plan on each row",
+      "# Multiple sessions: just use different dates",
+      "# Exercise names are fuzzy-matched on import - close is fine",
+      "# Delete all # lines before uploading",
+      "#",
+      "# VALID EXERCISE NAMES (use these or close variations):",
+      exerciseList,
+      "#",
+      "# ─────────────────────────────────────────────────────────────",
+      "Date,Plan,Exercise,Equipment,S1_Weight,S1_Reps,S2_Weight,S2_Reps,S3_Weight,S3_Reps,S4_Weight,S4_Reps",
+      "2026-06-02,Upper 1,Bench Press,Barbell,110,6,110,6,105,8,,",
+      "2026-06-02,Upper 1,Pull Ups (Weighted),Belt,20,8,20,7,20,6,,",
+      "2026-06-02,Upper 1,Bicep Curls,DB,18,10,18,10,18,8,,",
+      "2026-06-04,Lower 1,Back Squat,Barbell,130,8,130,8,130,6,,",
+      "2026-06-04,Lower 1,RDL,Barbell,120,8,120,8,120,8,,",
+    ];
+    const blob = new Blob([rows.join("\n")], { type:"text/csv" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "workout_import_template.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result;
+        const lines = text.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#"));
+        if (!lines.length) { setImportError("File is empty or only has comment lines"); return; }
+        const dataLines = lines[0].toLowerCase().includes("date") ? lines.slice(1) : lines;
+        const parsedMap = {};
+        const nameChanges = [];
+        dataLines.forEach((line, lineIdx) => {
+          if (!line.trim()) return;
+          const cols = line.split(",").map(col => col.trim().replace(/^"|"$/g, ""));
+          if (cols.length < 6) return;
+          const dateStr = cols[0], planName = cols[1];
+          const rawName = cols[2], equipment = cols[3];
+          const s1w = cols[4], s1r = cols[5], s2w = cols[6], s2r = cols[7];
+          const s3w = cols[8], s3r = cols[9], s4w = cols[10], s4r = cols[11];
+          if (!dateStr || !rawName) return;
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            setImportError("Line " + (lineIdx+2) + ": Invalid date - use YYYY-MM-DD");
+            return;
+          }
+          // Fuzzy match the exercise name
+          const matchedName = fuzzyMatchExercise(rawName);
+          if (matchedName !== rawName) nameChanges.push(rawName + " → " + matchedName);
+          const key = dateStr + "_" + (planName || "");
+          if (!parsedMap[key]) parsedMap[key] = { date:dateStr, plan:planName || "Imported", type:"UPPER", exercises:[] };
+          const sets = [];
+          [[s1w,s1r],[s2w,s2r],[s3w,s3r],[s4w,s4r]].forEach(([wt, rp]) => {
+            if (wt && rp) sets.push({ weight:parseFloat(wt)||0, reps:parseFloat(rp)||0 });
+          });
+          if (sets.length > 0) parsedMap[key].exercises.push({ name:matchedName, equipment:equipment||"Barbell", sets });
+        });
+        const newSessions = Object.values(parsedMap);
+        newSessions.forEach(session => { session.type = inferSessionType(session.exercises); });
+        if (!newSessions.length) { setImportError("No valid sessions found - check date format (YYYY-MM-DD)"); return; }
+        setImportPreview({ sessions:newSessions, nameChanges:[...new Set(nameChanges)] });
+        setImportError("");
+      } catch (err) {
+        setImportError("Failed to parse: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmImport = async () => {
+    if (!importPreview) return;
+    const previewSessions = importPreview.sessions || importPreview;
+    const existingKeys = new Set(previewSessions.map(session => sessionKey(session)));
+    const kept = sessions.filter(session => !existingKeys.has(sessionKey(session)));
+    const merged = [...kept, ...previewSessions].sort((first, second) => first.date.localeCompare(second.date));
+    await saveSessions(merged);
+    showToast("Imported " + previewSessions.length + " session" + (previewSessions.length > 1 ? "s" : "") + "!");
+    setShowImportModal(false);
+    setImportPreview(null);
+    setImportError("");
+  };
+
+  const TYPE_COLORS = { UPPER:BLUE, LOWER:GREEN, "FULL BODY":AMBER };
+  const TYPE_BG = { UPPER:"#EEF4FC", LOWER:"#E8F7F0", "FULL BODY":"#FFF4E0" };
+
+  return (
+    <div style={{ padding:"0 12px 100px" }}>
+      <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+        <button onClick={downloadTemplate} style={{ flex:1, padding:"11px", borderRadius:11, border:"1.5px solid " + MIST, background:CARD_BG, color:SLATE, fontFamily:FONT_MAIN, fontSize:12, fontWeight:600, cursor:"pointer" }}>
+          Download Template
+        </button>
+        <button onClick={() => setShowImportModal(true)} style={{ flex:1, padding:"11px", borderRadius:11, border:"1.5px solid " + MIST, background:CARD_BG, color:SLATE, fontFamily:FONT_MAIN, fontSize:12, fontWeight:600, cursor:"pointer" }}>
+          Import CSV
+        </button>
+      </div>
+
+      <div style={{ fontWeight:700, fontSize:13, color:INK, marginBottom:4 }}>All {sessions.length} Sessions</div>
+      <div style={{ fontSize:10, color:STONE, marginBottom:10 }}>Tap to expand · Edit to correct data</div>
+
+      {sorted.map(session => {
+        const key = sessionKey(session);
+        const sessionType = inferSessionType(session.exercises);
+        const isOpen = openKey === key;
+        const isEditing = editKey === key;
+        const display = isEditing ? editData : session;
+        return (
+          <div key={key} style={{ background:CARD_BG, borderRadius:12, marginBottom:8, overflow:"hidden", boxShadow:"0 1px 4px rgba(0,0,0,0.06)", border:"1px solid " + MIST, borderLeft:"3px solid " + (TYPE_COLORS[sessionType] || BLUE) }}>
+            <div style={{ padding:"10px 11px", display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer" }}
+              onClick={() => { if (!isEditing) setOpenKey(isOpen ? null : key); }}>
+              <div>
+                <div style={{ fontWeight:700, fontSize:12, color:INK }}>{session.date}</div>
+                <div style={{ fontSize:9, color:STONE, marginTop:1 }}>{session.plan || sessionType} · {session.exercises.length} exercises</div>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <span style={{ fontSize:9, fontWeight:700, color:TYPE_COLORS[sessionType]||BLUE, background:TYPE_BG[sessionType]||"#EEF4FC", padding:"2px 6px", borderRadius:5 }}>{sessionType}</span>
+                {!isEditing && <span style={{ color:STONE, fontSize:11 }}>{isOpen ? "▲" : "▼"}</span>}
+              </div>
+            </div>
+            {(isOpen || isEditing) && (
+              <div style={{ borderTop:"1px solid " + SKY, padding:"8px 11px" }}>
+                <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+                  {!isEditing
+                    ? <button onClick={() => startEdit(session)} style={{ padding:"5px 12px", borderRadius:7, border:"1.5px solid " + MIST, background:"none", color:SLATE, fontSize:10, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN }}>Edit</button>
+                    : <><button onClick={saveEdit} style={{ flex:1, padding:"7px 12px", borderRadius:7, border:"none", background:GREEN, color:WHITE, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:FONT_MAIN }}>Save Changes</button>
+                        <button onClick={() => { setEditKey(null); setEditData(null); }} style={{ padding:"7px 12px", borderRadius:7, border:"1.5px solid " + MIST, background:"none", color:SLATE, fontSize:10, cursor:"pointer", fontFamily:FONT_MAIN }}>Cancel</button></>
+                  }
+                </div>
+                {display.exercises.map((exercise, exIdx) => (
+                  <div key={exIdx} style={{ marginBottom:10, padding:"8px 9px", background:FOG, borderRadius:9 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
+                      <div style={{ fontWeight:600, fontSize:11, color:INK }}>{exercise.name}</div>
+                      {isEditing ? <EquipChips selected={exercise.equipment} onChange={equip => updateEditEquip(exIdx, equip)} small/> : <span style={{ color:STONE, fontSize:9 }}>{exercise.equipment}</span>}
+                    </div>
+                    {isEditing && (
+                      <div style={{ display:"grid", gridTemplateColumns:"18px 1fr 1fr", gap:3, marginBottom:4 }}>
+                        {["#","Weight","Reps"].map((header, idx) => <div key={idx} style={{ fontSize:7, color:STONE, textAlign:"center" }}>{header}</div>)}
+                      </div>
+                    )}
+                    <div style={{ display:"flex", flexDirection:isEditing?"column":"row", gap:isEditing?3:4, flexWrap:isEditing?"nowrap":"wrap" }}>
+                      {exercise.sets.map((setItem, setIdx) => (
+                        isEditing ? (
+                          <div key={setIdx} style={{ display:"grid", gridTemplateColumns:"18px 1fr 1fr", gap:3, alignItems:"center" }}>
+                            <div style={{ fontFamily:FONT_MONO, fontSize:10, color:PEBBLE, textAlign:"center" }}>S{setIdx+1}</div>
+                            <input type="number" inputMode="decimal" value={setItem.weight} onChange={event => updateEditSet(exIdx, setIdx, "weight", event.target.value)} style={{ padding:"6px 4px", borderRadius:5, border:"1.5px solid " + MIST, background:WHITE, fontFamily:FONT_MONO, fontSize:13, fontWeight:500, color:INK, textAlign:"center", outline:"none", width:"100%" }}/>
+                            <input type="number" inputMode="numeric" value={setItem.reps} onChange={event => updateEditSet(exIdx, setIdx, "reps", event.target.value)} style={{ padding:"6px 4px", borderRadius:5, border:"1.5px solid " + MIST, background:WHITE, fontFamily:FONT_MONO, fontSize:13, fontWeight:500, color:INK, textAlign:"center", outline:"none", width:"100%" }}/>
+                          </div>
+                        ) : (
+                          <div key={setIdx} style={{ background:WHITE, borderRadius:4, padding:"2px 6px", fontFamily:FONT_MONO, fontSize:9, color:SLATE }}>
+                            S{setIdx+1} {setItem.weight ? setItem.weight + "kg" : "—"} x {setItem.reps || "—"}
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {showImportModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"flex-end" }} onClick={event => event.target === event.currentTarget && setShowImportModal(false)}>
+          <div style={{ background:CARD_BG, borderRadius:"16px 16px 0 0", width:"100%", padding:"20px 16px 40px", maxHeight:"80vh", overflowY:"auto" }}>
+            <div style={{ width:32, height:4, background:MIST, borderRadius:2, margin:"0 auto 16px" }}/>
+            <div style={{ fontWeight:800, fontSize:17, marginBottom:4 }}>Import Sessions</div>
+            <div style={{ fontSize:11, color:STONE, marginBottom:16, lineHeight:1.5 }}>Download the template first, fill it in Excel, save as CSV, then upload here. Sessions with matching date + plan will be replaced.</div>
+            {!importPreview ? (
+              <label style={{ display:"block", padding:"20px", borderRadius:12, border:"2px dashed " + MIST, textAlign:"center", cursor:"pointer", background:FOG }}>
+                <div style={{ fontSize:28, marginBottom:8 }}>📂</div>
+                <div style={{ fontSize:13, fontWeight:600, color:SLATE, marginBottom:4 }}>Tap to choose CSV file</div>
+                <div style={{ fontSize:10, color:STONE }}>Must be saved as .csv format</div>
+                <input type="file" accept=".csv,.txt" onChange={handleFileUpload} style={{ display:"none" }}/>
+              </label>
+            ) : (
+              <div>
+                <div style={{ background:FOG, borderRadius:10, padding:"12px 14px", marginBottom:14 }}>
+                  <div style={{ fontWeight:700, fontSize:12, color:GREEN, marginBottom:8 }}>Preview — {(importPreview.sessions||importPreview).length} session{(importPreview.sessions||importPreview).length > 1 ? "s" : ""} found</div>
+                  {(importPreview.sessions||importPreview).map((session, idx) => (
+                    <div key={idx} style={{ fontSize:11, color:SLATE, marginBottom:3 }}>
+                      <span style={{ fontWeight:600, color:INK }}>{session.date}</span> · {session.plan} · {session.exercises.length} exercises
+                    </div>
+                  ))}
+                  {importPreview.nameChanges && importPreview.nameChanges.length > 0 && (
+                    <div style={{ marginTop:10, paddingTop:10, borderTop:"1px solid " + MIST }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:AMBER, marginBottom:5 }}>Auto-matched exercise names:</div>
+                      {importPreview.nameChanges.map((change, idx) => (
+                        <div key={idx} style={{ fontSize:10, color:SLATE, marginBottom:2 }}>{change}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={confirmImport} style={{ flex:1, padding:"13px", borderRadius:11, border:"none", background:INK, color:WHITE, fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                    Import {importPreview.length} Session{importPreview.length > 1 ? "s" : ""}
+                  </button>
+                  <button onClick={() => { setImportPreview(null); setImportError(""); }} style={{ padding:"13px 14px", borderRadius:11, border:"1.5px solid " + MIST, background:"none", color:SLATE, fontSize:12, cursor:"pointer", fontFamily:FONT_MAIN }}>Back</button>
+                </div>
+              </div>
+            )}
+            {importError && (
+              <div style={{ marginTop:12, padding:"10px 12px", background:"#FEF0EE", borderRadius:8, border:"1px solid " + CORAL }}>
+                <div style={{ fontSize:11, color:CORAL, fontWeight:600 }}>{importError}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PLAN TAB ─────────────────────────────────────────────────────────────────
+function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
+  const [selectedPlan, setSelectedPlan] = useState(activePlanName);
+  const [localPlans, setLocalPlans] = useState(() => JSON.parse(JSON.stringify(plans)));
+  const [editMode, setEditMode] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [newPlanName, setNewPlanName] = useState("");
+
+  useEffect(() => {
+    if (!localPlans[selectedPlan]) setSelectedPlan(Object.keys(localPlans)[0]);
+  }, [localPlans, selectedPlan]);
+
+  const currentDays = localPlans[selectedPlan]?.days || {};
+
+  const mutate = (fn) => {
+    setLocalPlans(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      fn(next);
+      return next;
+    });
+    setIsDirty(true);
+  };
+
+  const updateName = (day, idx, value) => mutate(state => { state[selectedPlan].days[day][idx].name = value; });
+  const updateEquip = (day, idx, value) => mutate(state => { state[selectedPlan].days[day][idx].equipment = value; });
+  const updateTargetSets = (day, idx, value) => mutate(state => { state[selectedPlan].days[day][idx].targetSets = parseInt(value) || 3; });
+  const addExercise = (day) => mutate(state => { state[selectedPlan].days[day].push({ name:"New Exercise", equipment:"Barbell", supersetGroup:null, targetSets:3 }); });
+  const removeExercise = (day, idx) => mutate(state => { state[selectedPlan].days[day].splice(idx, 1); });
+  const moveExercise = (day, fromIdx, toIdx) => {
+    if (toIdx < 0 || toIdx >= currentDays[day].length) return;
+    mutate(state => {
+      const arr = state[selectedPlan].days[day];
+      const [removed] = arr.splice(fromIdx, 1);
+      arr.splice(toIdx, 0, removed);
+    });
+  };
+  const cycleSS = (day, idx) => mutate(state => {
+    const exercises = state[selectedPlan].days[day];
+    const current = exercises[idx].supersetGroup || null;
+    const existing = [...new Set(exercises.map(item => item.supersetGroup).filter(Boolean))];
+    const maxGroup = existing.length > 0 ? Math.max(...existing) : 0;
+    exercises[idx].supersetGroup = current === null ? 1 : current >= Math.min(maxGroup + 1, 3) ? null : current + 1;
+  });
+  const addDay = () => mutate(state => {
+    const dayName = `Day ${Object.keys(state[selectedPlan].days).length + 1}`;
+    state[selectedPlan].days[dayName] = [{ name:"Exercise 1", equipment:"Barbell", supersetGroup:null }];
+  });
+  const removeDay = (day) => {
+    if (Object.keys(currentDays).length <= 1) { showToast("Need at least 1 day"); return; }
+    mutate(state => { delete state[selectedPlan].days[day]; });
+  };
+  const renameDay = (oldName, newName) => {
+    if (!newName.trim() || newName === oldName) return;
+    mutate(state => {
+      const entries = Object.entries(state[selectedPlan].days).map(([key, val]) => key === oldName ? [newName, val] : [key, val]);
+      state[selectedPlan].days = Object.fromEntries(entries);
+    });
+  };
+  const saveNewPlan = () => {
+    if (!newPlanName.trim()) { showToast("Enter a name"); return; }
+    mutate(state => { state[newPlanName] = { days: JSON.parse(JSON.stringify(currentDays)) }; });
+    setSelectedPlan(newPlanName);
+    setShowNewModal(false);
+    setNewPlanName("");
+  };
+
+  const isUpperDay = (dayName) => /upper|push|pull/i.test(dayName);
+
+  return (
+    <div style={{ padding:"12px 12px 120px" }}>
+      {/* Plan selector */}
+      <div style={{ display:"flex", gap:5, marginBottom:10, overflowX:"auto", paddingBottom:4 }}>
+        {Object.keys(localPlans).map(planName => (
+          <Pill key={planName} label={planName} active={selectedPlan===planName} color={BLUE} onPress={() => { setSelectedPlan(planName); setEditMode(false); }}/>
+        ))}
+        <button onClick={() => setShowNewModal(true)} style={{ flex:"0 0 auto", padding:"5px 11px", borderRadius:18, border:`1.5px dashed ${BLUE}`, background:"none", color:BLUE, fontSize:10, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN }}>+ New</button>
+      </div>
+
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <div>
+          <div style={{ fontWeight:700, fontSize:13, color:INK }}>{selectedPlan}</div>
+          <div style={{ fontSize:10, color:STONE }}>{Object.keys(currentDays).length} days · tap Modify to edit</div>
+        </div>
+        <button onClick={() => setEditMode(prev => !prev)} style={{ padding:"6px 13px", borderRadius:9, border:`1.5px solid ${editMode ? BLUE : MIST}`, background:editMode ? BLUE : "none", color:editMode ? WHITE : SLATE, fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN }}>
+          {editMode ? "Done" : "Modify"}
+        </button>
+      </div>
+
+      {Object.entries(currentDays).map(([dayName, exercises]) => (
+        <div key={dayName} style={{ background:WHITE, borderRadius:14, marginBottom:10, overflow:"hidden", boxShadow:"0 2px 8px rgba(43,126,193,0.07)", borderLeft:`3px solid ${isUpperDay(dayName) ? BLUE : GREEN}` }}>
+          <div style={{ padding:"9px 11px", background:FOG, borderBottom:`1px solid ${MIST}`, display:"flex", alignItems:"center", gap:7 }}>
+            {editMode
+              ? <input defaultValue={dayName} onBlur={event => renameDay(dayName, event.target.value)} style={{ flex:1, border:"none", outline:"none", background:"transparent", fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, color:INK }}/>
+              : <div style={{ flex:1, fontWeight:700, fontSize:13, color:INK }}>{dayName}</div>
+            }
+            <span style={{ fontSize:9, color:STONE }}>{exercises.length} ex</span>
+            {editMode && <button onClick={() => removeDay(dayName)} style={{ background:"none", border:"none", color:CORAL, fontSize:16, cursor:"pointer", padding:"0 2px" }}>×</button>}
+          </div>
+          <div style={{ padding:"7px 11px" }}>
+            {exercises.map((exercise, idx) => {
+              const groupNum = exercise.supersetGroup || null;
+              const ssCol = groupNum ? SS_COLORS[groupNum] : null;
+              const nextEx = exercises[idx + 1];
+              const showConnector = groupNum && nextEx && nextEx.supersetGroup === groupNum;
+              const targetSets = exercise.targetSets || 3;
+              return (
+                <div key={idx}>
+                  <div style={{ display:"flex", gap:5, alignItems:"flex-start", marginBottom:showConnector ? 2 : 7, padding:"7px 9px", background:ssCol ? ssCol.bg : SKY, borderRadius:9, border:`1.5px solid ${ssCol ? ssCol.border : MIST}` }}>
+                    {editMode && (
+                      <div style={{ display:"flex", flexDirection:"column", gap:1, flexShrink:0, paddingTop:1 }}>
+                        <button onClick={() => moveExercise(dayName, idx, idx-1)} disabled={idx===0} style={{ background:"none", border:"none", color:idx===0?PEBBLE:BLUE, cursor:idx===0?"default":"pointer", fontSize:11, padding:0, lineHeight:1, fontWeight:700 }}>▲</button>
+                        <button onClick={() => moveExercise(dayName, idx, idx+1)} disabled={idx===exercises.length-1} style={{ background:"none", border:"none", color:idx===exercises.length-1?PEBBLE:BLUE, cursor:idx===exercises.length-1?"default":"pointer", fontSize:11, padding:0, lineHeight:1, fontWeight:700 }}>▼</button>
+                      </div>
+                    )}
+                    <div style={{ flex:1, minWidth:0 }}>
+                      {editMode
+                        ? <input value={exercise.name} onChange={event => updateName(dayName, idx, event.target.value)} style={{ width:"100%", border:"none", outline:"none", background:"transparent", fontFamily:FONT_MAIN, fontSize:12, fontWeight:600, color:INK, marginBottom:4 }}/>
+                        : <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:3 }}>
+                            <span style={{ fontSize:12, fontWeight:600, color:INK }}>{exercise.name}</span>
+                            {groupNum && <span style={{ fontSize:8, fontWeight:800, color:ssCol.text, background:ssCol.bg, padding:"1px 5px", borderRadius:3, border:`1px solid ${ssCol.border}` }}>SS {["A","B","C"][groupNum-1]}</span>}
+                          </div>
+                      }
+                      {editMode && <EquipChips selected={exercise.equipment} onChange={equip => updateEquip(dayName, idx, equip)} small/>}
+                      {!editMode && <div style={{ fontSize:9, color:STONE }}>{exercise.equipment}</div>}
+                    </div>
+                    {/* Target sets — always visible, editable in modify mode */}
+                    <div style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+                      {editMode ? (
+                        <input type="number" value={targetSets} onFocus={event => event.target.select()}
+                          onChange={event => updateTargetSets(dayName, idx, event.target.value)}
+                          style={{ width:36, padding:"3px 4px", borderRadius:6, border:`1.5px solid ${MIST}`, background:WHITE, fontFamily:FONT_MONO, fontSize:13, fontWeight:700, color:BLUE, textAlign:"center", outline:"none" }}/>
+                      ) : (
+                        <div style={{ background:BLUE, color:WHITE, borderRadius:6, padding:"2px 7px", fontSize:11, fontWeight:700, fontFamily:FONT_MONO }}>{targetSets}</div>
+                      )}
+                      <div style={{ fontSize:7, color:STONE }}>sets</div>
+                    </div>
+                    {editMode && (
+                      <div style={{ display:"flex", flexDirection:"column", gap:3, flexShrink:0 }}>
+                        <button onClick={() => cycleSS(dayName, idx)} title="Cycle: none → SS A → SS B → SS C → none"
+                          style={{ fontSize:7, fontWeight:800, padding:"2px 5px", borderRadius:4, border:`1px solid ${ssCol ? ssCol.border : MIST}`, background:ssCol ? ssCol.bg : "none", color:ssCol ? ssCol.text : STONE, cursor:"pointer", fontFamily:FONT_MAIN, minWidth:26, textAlign:"center" }}>
+                          {groupNum ? `SS ${["A","B","C"][groupNum-1]}` : "SS"}
+                        </button>
+                        <button onClick={() => removeExercise(dayName, idx)} style={{ background:"none", border:"none", color:STONE, fontSize:14, cursor:"pointer", padding:0, lineHeight:1 }}>×</button>
+                      </div>
+                    )}
+                  </div>
+                  {showConnector && (
+                    <div style={{ display:"flex", alignItems:"center", marginLeft:editMode ? 36 : 10, marginBottom:2 }}>
+                      <div style={{ width:2, height:7, background:ssCol.border, borderRadius:1, marginRight:4 }}/>
+                      <span style={{ fontSize:8, color:ssCol.text, fontWeight:700 }}>Superset {["A","B","C"][groupNum-1]}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {editMode && <button onClick={() => addExercise(dayName)} style={{ width:"100%", padding:"6px", borderRadius:7, border:`1.5px dashed ${MIST}`, background:"none", color:STONE, fontSize:10, fontWeight:500, cursor:"pointer", fontFamily:FONT_MAIN, marginTop:2 }}>+ Exercise</button>}
+
+            {/* Muscle summary for this day */}
+            {(() => {
+              const muscleTotals = {};
+              MUSCLES.forEach(muscle => { muscleTotals[muscle] = 0; });
+              exercises.forEach(exercise => {
+                const contributions = MUSCLE_MAP[exercise.name] || {};
+                const sets = exercise.targetSets || 3;
+                Object.entries(contributions).forEach(([muscle, factor]) => {
+                  if (muscleTotals[muscle] !== undefined) muscleTotals[muscle] += sets * factor;
+                });
+              });
+              const nonZero = MUSCLES.filter(muscle => muscleTotals[muscle] > 0);
+              if (!nonZero.length) return null;
+              return (
+                <div style={{ marginTop:8, padding:"8px 10px", background:FOG, borderRadius:8, borderTop:`1px solid ${MIST}` }}>
+                  <div style={{ fontSize:9, fontWeight:700, color:STONE, letterSpacing:"0.5px", marginBottom:6 }}>EFFECTIVE SETS PER MUSCLE</div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                    {nonZero.map(muscle => (
+                      <div key={muscle} style={{ display:"flex", alignItems:"center", gap:3, padding:"2px 7px", background:CARD_BG, borderRadius:8, border:`1px solid ${MIST}` }}>
+                        <span style={{ fontSize:9, color:SLATE }}>{MUSCLE_LABEL[muscle]}</span>
+                        <span style={{ fontSize:9, fontWeight:700, color:BLUE, fontFamily:FONT_MONO }}>{Math.round(muscleTotals[muscle] * 10) / 10}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      ))}
+
+      {editMode && <button onClick={addDay} style={{ width:"100%", padding:"10px", borderRadius:11, border:`1.5px dashed ${BLUE}`, background:"none", color:BLUE, fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN, marginBottom:8 }}>+ Add Workout Day</button>}
+      {isDirty && <button onClick={async () => { await onSavePlans(localPlans); setIsDirty(false); setEditMode(false); }} style={{ width:"100%", padding:"13px", borderRadius:11, border:"none", background:`linear-gradient(135deg,${BLUEDARK},${BLUE})`, color:WHITE, fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, cursor:"pointer", boxShadow:`0 4px 14px rgba(43,126,193,0.3)` }}>Save Plan</button>}
+
+      {showNewModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"flex-end" }} onClick={event => event.target === event.currentTarget && setShowNewModal(false)}>
+          <div style={{ background:WHITE, borderRadius:"16px 16px 0 0", width:"100%", padding:"20px 16px 36px" }}>
+            <div style={{ fontWeight:800, fontSize:17, marginBottom:3 }}>Save as New Plan</div>
+            <div style={{ fontSize:10, color:STONE, marginBottom:14 }}>Copies current days</div>
+            <input value={newPlanName} onChange={event => setNewPlanName(event.target.value)} placeholder="e.g. 3 Day PPL"
+              style={{ width:"100%", padding:"11px 13px", borderRadius:9, border:`1.5px solid ${BLUE}`, fontFamily:FONT_MAIN, fontSize:13, color:INK, outline:"none", marginBottom:10 }}/>
+            <div style={{ display:"flex", gap:7 }}>
+              <button onClick={saveNewPlan} style={{ flex:1, padding:"12px", borderRadius:10, border:"none", background:INK, color:WHITE, fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, cursor:"pointer" }}>Save</button>
+              <button onClick={() => setShowNewModal(false)} style={{ padding:"12px 14px", borderRadius:10, border:`1.5px solid ${MIST}`, background:"none", color:SLATE, fontSize:11, cursor:"pointer", fontFamily:FONT_MAIN }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PLAN PICKER MODAL ────────────────────────────────────────────────────────
+function PlanPickerModal({ plans, activePlanName, onSelect, onClose }) {
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"flex-end" }} onClick={event => event.target === event.currentTarget && onClose()}>
+      <div style={{ background:WHITE, borderRadius:"16px 16px 0 0", width:"100%", padding:"20px 16px 40px" }}>
+        <div style={{ width:32, height:4, background:MIST, borderRadius:2, margin:"0 auto 16px" }}/>
+        <div style={{ fontWeight:800, fontSize:17, marginBottom:14 }}>Active Workout Plan</div>
+        {Object.keys(plans).map(planName => (
+          <button key={planName} onClick={() => onSelect(planName)} style={{ width:"100%", padding:"13px 15px", borderRadius:11, border:`1.5px solid ${activePlanName===planName ? BLUE : MIST}`, background:activePlanName===planName ? FOG : "none", color:INK, fontFamily:FONT_MAIN, fontSize:13, fontWeight:activePlanName===planName ? 700 : 500, cursor:"pointer", marginBottom:7, textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            {planName}
+            {activePlanName === planName && <span style={{ color:BLUE, fontSize:11 }}>✓ Active</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── SETTINGS MODAL ───────────────────────────────────────────────────────────
+function SettingsModal({ goals, bodyweight, onClose }) {
+  const [localGoals, setLocalGoals] = useState({ ...goals });
+  const [localBW, setLocalBW] = useState(String(bodyweight));
+
+  const updateGoal = (muscle, value) => {
+    const num = parseInt(value);
+    setLocalGoals(prev => ({ ...prev, [muscle]: isNaN(num) ? prev[muscle] : Math.max(1, num) }));
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:300, display:"flex", alignItems:"flex-end" }} onClick={event => event.target === event.currentTarget && onClose(localGoals, parseFloat(localBW) || bodyweight)}>
+      <div style={{ background:WHITE, borderRadius:"16px 16px 0 0", width:"100%", padding:"20px 16px 40px", maxHeight:"85vh", overflowY:"auto" }}>
+        <div style={{ width:32, height:4, background:MIST, borderRadius:2, margin:"0 auto 16px" }}/>
+        <div style={{ fontWeight:800, fontSize:19, marginBottom:14 }}>Settings</div>
+
+        {/* Bodyweight */}
+        <div style={{ padding:"12px 14px", background:FOG, borderRadius:11, marginBottom:16 }}>
+          <div style={{ fontWeight:700, fontSize:12, color:INK, marginBottom:1 }}>Bodyweight</div>
+          <div style={{ fontSize:10, color:STONE, marginBottom:8 }}>Used for pull up / dip / chin up 1RM</div>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <input type="number" value={localBW} onChange={event => setLocalBW(event.target.value)} onBlur={() => { const num = parseFloat(localBW); if (!isNaN(num) && num > 0) setLocalBW(String(num)); }}
+              style={{ width:76, padding:"9px", borderRadius:7, border:`1.5px solid ${BLUE}`, fontFamily:FONT_MONO, fontSize:19, fontWeight:700, color:BLUE, textAlign:"center", outline:"none" }}/>
+            <span style={{ fontSize:13, color:SLATE }}>kg</span>
+          </div>
+        </div>
+
+        {/* Volume goals — single number */}
+        <div style={{ fontWeight:700, fontSize:12, color:INK, marginBottom:2 }}>Weekly Sets Goal per Muscle</div>
+        <div style={{ fontSize:10, color:STONE, marginBottom:14 }}>Based on hypertrophy research (Schoenfeld et al)</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+          {MUSCLES.map(muscle => (
+            <div key={muscle} style={{ padding:"10px 12px", background:FOG, borderRadius:10 }}>
+              <div style={{ fontWeight:600, fontSize:11, color:INK, marginBottom:6 }}>{MUSCLE_LABEL[muscle]}</div>
+              <input type="number" value={localGoals[muscle] || ""}
+                onChange={event => updateGoal(muscle, event.target.value)}
+                onFocus={event => event.target.select()}
+                style={{ width:"100%", padding:"7px 8px", borderRadius:7, border:`1.5px solid ${MIST}`, background:WHITE, fontFamily:FONT_MONO, fontSize:16, fontWeight:700, color:BLUE, textAlign:"center", outline:"none" }}/>
+              <div style={{ fontSize:8, color:STONE, textAlign:"center", marginTop:3 }}>sets / week</div>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={() => onClose(localGoals, parseFloat(localBW) || bodyweight)}
+          style={{ width:"100%", padding:"13px", borderRadius:11, border:"none", background:`linear-gradient(135deg,${BLUEDARK},${BLUE})`, color:WHITE, fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, cursor:"pointer", marginTop:16 }}>
+          Save Settings
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>
