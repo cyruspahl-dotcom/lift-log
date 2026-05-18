@@ -575,6 +575,7 @@ const SS_COLORS = {
   1: { text:"#C05E00", bg:"#FFF0D5", border:"#F5C07A" },
   2: { text:"#5B3FA0", bg:"#F0EBFA", border:"#C0A8E8" },
   3: { text:"#1A6B42", bg:"#E5F7EF", border:"#8ED4B0" },
+  4: { text:"#B02060", bg:"#FCE8F0", border:"#EBA8C4" },
 };
 
 // --- SMALL COMPONENTS ---------------------------------------------------------
@@ -650,6 +651,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
+  const [customExercises, setCustomExercises] = useState({});
 
   useEffect(() => {
     (async () => {
@@ -658,12 +660,14 @@ function App() {
       const savedBW = await storageGet("wt_v6_bw");
       const savedPlans = await storageGet("wt_v6_plans");
       const savedActivePlan = await storageGet("wt_v6_activeplan");
+      const savedCustomExercises = await storageGet("wt_v6_custom_exercises");
       setSessions(savedSessions && savedSessions.length ? savedSessions : HISTORICAL);
       if (!savedSessions || !savedSessions.length) await storageSet("wt_v6_sessions", HISTORICAL);
       if (savedGoals) setGoals(savedGoals);
       if (savedBW) setBodyweight(savedBW);
       if (savedPlans) setPlans(savedPlans);
       if (savedActivePlan) setActivePlanName(savedActivePlan);
+      if (savedCustomExercises) setCustomExercises(savedCustomExercises);
       setIsLoaded(true);
     })();
   }, []);
@@ -716,17 +720,18 @@ function App() {
       <div style={{ padding:"12px 0 0" }}>
         {activeTab === "dashboard" && <DashboardTab sessions={sessions} goals={goals} bodyweight={bodyweight}/>}
         {activeTab === "log" && (
-          <LogTab sessions={sessions} logDate={logDate} setLogDate={setLogDate} logPlanDay={logPlanDay} setLogPlanDay={setLogPlanDay} logExercises={logExercises} setLogExercises={setLogExercises} logSaved={logSaved} setLogSaved={setLogSaved} saveSessions={saveSessions} showToast={showToast} activeDays={activeDays}/>
+          <LogTab sessions={sessions} logDate={logDate} setLogDate={setLogDate} logPlanDay={logPlanDay} setLogPlanDay={setLogPlanDay} logExercises={logExercises} setLogExercises={setLogExercises} logSaved={logSaved} setLogSaved={setLogSaved} saveSessions={saveSessions} showToast={showToast} activeDays={activeDays} customExercises={customExercises}/>
         )}
         {activeTab === "history" && <HistoryTab sessions={sessions} saveSessions={saveSessions} showToast={showToast}/>}
-        {activeTab === "plan" && <PlanTab plans={plans} activePlanName={activePlanName} onSavePlans={async (updated) => { setPlans(updated); await storageSet("wt_v6_plans", updated); showToast("✓ Plan saved!"); }} showToast={showToast}/>}
+        {activeTab === "plan" && <PlanTab plans={plans} activePlanName={activePlanName} onSavePlans={async (updated) => { setPlans(updated); await storageSet("wt_v6_plans", updated); showToast("✓ Plan saved!"); }} showToast={showToast} customExercises={customExercises}/>}
       </div>
 
       {showSettings && (
-        <SettingsModal goals={goals} bodyweight={bodyweight} onClose={async (newGoals, newBW) => {
-          setGoals(newGoals); setBodyweight(newBW);
+        <SettingsModal goals={goals} bodyweight={bodyweight} customExercises={customExercises} onClose={async (newGoals, newBW, newCustom) => {
+          setGoals(newGoals); setBodyweight(newBW); setCustomExercises(newCustom);
           await storageSet("wt_v6_goals", newGoals);
           await storageSet("wt_v6_bw", newBW);
+          await storageSet("wt_v6_custom_exercises", newCustom);
           setShowSettings(false);
         }}/>
       )}
@@ -822,16 +827,6 @@ function DashboardTab({ sessions, goals, bodyweight }) {
 
   return (
     <div style={{ padding:"0 12px 100px" }}>
-      {/* Stats */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:12 }}>
-        {[[totalSessions+"","SESSIONS",BLUE],[weeksActive+"","WEEKS",GREEN],[streak+"","STREAK",AMBER]].map(([val, label, color]) => (
-          <Card key={label} style={{ padding:"14px 8px", textAlign:"center", marginBottom:0 }}>
-            <div style={{ fontSize:26, fontWeight:800, color, lineHeight:1 }}>{val}</div>
-            <div style={{ fontSize:9, fontWeight:600, letterSpacing:"1px", color:STONE, marginTop:4 }}>{label}</div>
-          </Card>
-        ))}
-      </div>
-
       {/* Volume Table */}
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
@@ -1034,29 +1029,58 @@ function DashboardTab({ sessions, goals, bodyweight }) {
 }
 
 // --- LOG TAB ------------------------------------------------------------------
-function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logExercises, setLogExercises, logSaved, setLogSaved, saveSessions, showToast, activeDays }) {
+function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logExercises, setLogExercises, logSaved, setLogSaved, saveSessions, showToast, activeDays, customExercises }) {
   const [showCSV, setShowCSV] = useState(false);
+  const [pickerIdx, setPickerIdx] = useState(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+
+  // Build combined exercise list from MUSCLE_MAP + custom exercises
+  const allExerciseOptions = [
+    ...Object.keys(MUSCLE_MAP),
+    ...Object.keys(customExercises || {}),
+  ].filter((name, idx, arr) => arr.indexOf(name) === idx).sort();
+
+  // Suggest weights/reps based on last sessions
+  function getSuggestedSets(exerciseName, targetSets, lastSets, isUpperBody) {
+    if (!lastSets || !lastSets.length) return Array.from({ length: targetSets }, () => ({ weight:"", reps:"" }));
+    const allRepsHit = lastSets.every(setItem => setItem.reps >= 8);
+    const increment = isUpperBody ? 2.5 : 5;
+    return Array.from({ length: targetSets }, (_, idx) => {
+      const ref = lastSets[idx] || lastSets[lastSets.length - 1];
+      const suggestedWeight = allRepsHit ? (ref.weight || 0) + increment : (ref.weight || 0);
+      return { weight: suggestedWeight > 0 ? suggestedWeight : "", reps: ref.reps || "" };
+    });
+  }
 
   const startPlan = (dayName) => {
     setLogPlanDay(dayName);
     setLogSaved(false);
     const planExercises = activeDays[dayName] || [];
-    const lastMatch = [...sessions].reverse().find(session =>
-      session.exercises.some(ex => planExercises.find(planEx => planEx.name === ex.name))
-    );
+    const isUp = dayName.toLowerCase().includes("upper");
+    const reversedSessions = [...sessions].reverse();
+
+    // Normalize name for fuzzy matching
+    const normName = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, "");
+
     setLogExercises(planExercises.map(planEx => {
-      const lastEx = lastMatch?.exercises.find(ex => ex.name === planEx.name);
       const targetSets = planEx.targetSets || 3;
-      // Pre-fill the target number of empty set rows
-      const emptySets = Array.from({ length: targetSets }, () => ({ weight:"", reps:"" }));
+      const planNorm = normName(planEx.name);
+      // Find last session with this exercise — exact match first, then fuzzy
+      const lastSessionWithEx = reversedSessions.find(session =>
+        session.exercises.some(ex => ex.name === planEx.name || normName(ex.name) === planNorm)
+      );
+      const lastEx = lastSessionWithEx?.exercises.find(ex =>
+        ex.name === planEx.name || normName(ex.name) === planNorm
+      );
+      const suggested = getSuggestedSets(planEx.name, targetSets, lastEx?.sets || null, isUp);
       return {
         name: planEx.name,
         equipment: planEx.equipment,
         skipped: false,
-        sets: emptySets,
+        sets: suggested,
         supersetGroup: planEx.supersetGroup || null,
         lastSets: lastEx?.sets || null,
-        lastDate: lastMatch?.date || null,
+        lastDate: lastSessionWithEx?.date || null,
       };
     }));
   };
@@ -1158,9 +1182,11 @@ function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logE
               <div style={{ fontFamily:FONT_MONO, fontSize:15, fontWeight:700, color:PEBBLE, minWidth:22, paddingTop:2 }}>{exIdx+1}</div>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:5 }}>
-                  <input value={exercise.name} onChange={event => updateName(exIdx, event.target.value)} placeholder="Exercise name"
-                    style={{ flex:1, border:"none", outline:"none", background:"transparent", fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, color:INK }}/>
-                  {groupNum && <span style={{ fontSize:8, fontWeight:800, color:ssCol.text, background:ssCol.bg, padding:"1px 5px", borderRadius:3, border:`1px solid ${ssCol.border}`, flexShrink:0 }}>SS {["A","B","C"][groupNum-1]}</span>}
+                  <button onClick={() => { setPickerIdx(exIdx); setPickerSearch(exercise.name); }}
+                    style={{ flex:1, border:"none", outline:"none", background:"transparent", fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, color:exercise.name ? INK : STONE, textAlign:"left", cursor:"pointer", padding:0 }}>
+                    {exercise.name || "Tap to choose exercise..."}
+                  </button>
+                  {groupNum && <span style={{ fontSize:8, fontWeight:800, color:ssCol.text, background:ssCol.bg, padding:"1px 5px", borderRadius:3, border:`1px solid ${ssCol.border}`, flexShrink:0 }}>SS {["A","B","C","D"][groupNum-1]}</span>}
                 </div>
                 <EquipChips selected={exercise.equipment} onChange={equip => updateEquip(exIdx, equip)}/>
               </div>
@@ -1193,12 +1219,16 @@ function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logE
               {exercise.sets.map((setItem, setIdx) => (
                 <div key={setIdx} style={{ display:"grid", gridTemplateColumns:"20px 1fr 1fr 24px", gap:4, marginBottom:4, alignItems:"center" }}>
                   <div style={{ fontFamily:FONT_MONO, fontSize:12, fontWeight:600, color:PEBBLE, textAlign:"center" }}>S{setIdx+1}</div>
-                  <input type="number" inputMode="decimal" placeholder="kg" value={setItem.weight}
+                  <input type="text" inputMode="decimal"
+                    placeholder={setItem.weight ? String(setItem.weight) : "kg"}
+                    value={setItem.weight === "" ? "" : setItem.weight}
                     onChange={event => updateExSet(exIdx, setIdx, "weight", event.target.value)}
-                    style={{ padding:"9px 4px", borderRadius:6, border:`1.5px solid ${MIST}`, background:FOG, fontFamily:FONT_MONO, fontSize:15, fontWeight:500, color:INK, textAlign:"center", outline:"none", width:"100%" }}/>
-                  <input type="number" inputMode="numeric" placeholder="reps" value={setItem.reps}
+                    style={{ padding:"9px 4px", borderRadius:6, border:`1.5px solid ${setItem.weight ? MIST : BLUE}`, background:FOG, fontFamily:FONT_MONO, fontSize:15, fontWeight:500, color:setItem.weight ? INK : STONE, textAlign:"center", outline:"none", width:"100%" }}/>
+                  <input type="number" inputMode="numeric"
+                    placeholder={setItem.reps ? String(setItem.reps) : "reps"}
+                    value={setItem.reps === "" ? "" : setItem.reps}
                     onChange={event => updateExSet(exIdx, setIdx, "reps", event.target.value)}
-                    style={{ padding:"9px 4px", borderRadius:6, border:`1.5px solid ${MIST}`, background:FOG, fontFamily:FONT_MONO, fontSize:15, fontWeight:500, color:INK, textAlign:"center", outline:"none", width:"100%" }}/>
+                    style={{ padding:"9px 4px", borderRadius:6, border:`1.5px solid ${setItem.reps ? MIST : BLUE}`, background:FOG, fontFamily:FONT_MONO, fontSize:15, fontWeight:500, color:setItem.reps ? INK : STONE, textAlign:"center", outline:"none", width:"100%" }}/>
                   <button onClick={() => removeExSet(exIdx, setIdx)} style={{ width:24, height:24, borderRadius:"50%", border:`1.5px solid ${MIST}`, background:"none", color:STONE, fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>x</button>
                 </div>
               ))}
@@ -1210,7 +1240,7 @@ function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logE
         {showConnector && (
           <div style={{ display:"flex", alignItems:"center", marginLeft:14, marginBottom:2 }}>
             <div style={{ width:2, height:8, background:ssCol.border, borderRadius:1, marginRight:5 }}/>
-            <span style={{ fontSize:8, color:ssCol.text, fontWeight:700 }}>Superset {["A","B","C"][groupNum-1]}</span>
+            <span style={{ fontSize:8, color:ssCol.text, fontWeight:700 }}>Superset {["A","B","C","D"][groupNum-1]}</span>
           </div>
         )}
         </div>
@@ -1246,6 +1276,18 @@ function LogTab({ sessions, logDate, setLogDate, logPlanDay, setLogPlanDay, logE
             </div>
           </div>
         </div>
+      )}
+
+      {/* Exercise picker modal */}
+      {pickerIdx !== null && (
+        <ExercisePickerModal
+          options={allExerciseOptions}
+          search={pickerSearch}
+          setSearch={setPickerSearch}
+          onSelect={(name) => { updateName(pickerIdx, name); setPickerIdx(null); setPickerSearch(""); }}
+          onClose={() => { setPickerIdx(null); setPickerSearch(""); }}
+          customExercises={customExercises}
+        />
       )}
     </div>
   );
@@ -1309,6 +1351,49 @@ function fuzzyMatchExercise(input) {
   return input;
 }
 
+// --- EXERCISE PICKER MODAL ---------------------------------------------------
+function ExercisePickerModal({ options, search, setSearch, onSelect, onClose, customExercises }) {
+  const filtered = options.filter(name =>
+    name.toLowerCase().includes((search || "").toLowerCase())
+  );
+  const isNew = search.trim().length > 2 && !options.find(name => name.toLowerCase() === search.trim().toLowerCase());
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:250, display:"flex", alignItems:"flex-end" }} onClick={event => event.target === event.currentTarget && onClose()}>
+      <div style={{ background:CARD_BG, borderRadius:"16px 16px 0 0", width:"100%", padding:"16px 16px 40px", maxHeight:"75vh", display:"flex", flexDirection:"column" }}>
+        <div style={{ width:32, height:4, background:MIST, borderRadius:2, margin:"0 auto 12px" }}/>
+        <div style={{ fontWeight:700, fontSize:15, color:INK, marginBottom:10 }}>Choose Exercise</div>
+        <input
+          autoFocus
+          value={search}
+          onChange={event => setSearch(event.target.value)}
+          placeholder="Search or type new name..."
+          style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:`1.5px solid ${BLUE}`, fontFamily:FONT_MAIN, fontSize:13, color:INK, outline:"none", marginBottom:10 }}
+        />
+        <div style={{ overflowY:"auto", flex:1 }}>
+          {isNew && (
+            <button onClick={() => onSelect(search.trim())} style={{ width:"100%", padding:"12px 14px", borderRadius:10, border:`1.5px dashed ${AMBER}`, background:"#FFF8EC", color:AMBER, fontFamily:FONT_MAIN, fontSize:13, fontWeight:600, cursor:"pointer", marginBottom:6, textAlign:"left", display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:16 }}>+</span> Add "{search.trim()}" as new exercise
+            </button>
+          )}
+          {filtered.map(name => {
+            const isCustom = customExercises && customExercises[name];
+            return (
+              <button key={name} onClick={() => onSelect(name)} style={{ width:"100%", padding:"11px 14px", borderRadius:10, border:"none", background:"none", color:INK, fontFamily:FONT_MAIN, fontSize:13, fontWeight:500, cursor:"pointer", textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom:`1px solid ${FOG}` }}>
+                {name}
+                {isCustom && <span style={{ fontSize:9, color:AMBER, fontWeight:700, background:"#FFF4E0", padding:"1px 6px", borderRadius:6 }}>CUSTOM</span>}
+              </button>
+            );
+          })}
+          {filtered.length === 0 && !isNew && (
+            <div style={{ textAlign:"center", padding:"20px", color:STONE, fontSize:12 }}>No matches — keep typing to add new</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- HISTORY TAB --------------------------------------------------------------
 function HistoryTab({ sessions, saveSessions, showToast }) {
   const sorted = [...sessions].sort((first, second) => second.date.localeCompare(first.date));
@@ -1324,6 +1409,21 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
   const startEdit = (session) => {
     setEditKey(sessionKey(session));
     setEditData(JSON.parse(JSON.stringify(session)));
+  };
+
+  const deleteSession = async (session) => {
+    if (!window.confirm(`Delete entire session: ${session.date} ${session.plan || ""}?`)) return;
+    const updated = sessions.filter(sess => sessionKey(sess) !== sessionKey(session));
+    await saveSessions(updated);
+    showToast("Session deleted");
+  };
+
+  const deleteExerciseFromEdit = (exIdx) => {
+    setEditData(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.exercises.splice(exIdx, 1);
+      return next;
+    });
   };
 
   const updateEditSet = (exIdx, setIdx, field, value) => {
@@ -1487,7 +1587,10 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
               <div style={{ borderTop:"1px solid " + SKY, padding:"8px 11px" }}>
                 <div style={{ display:"flex", gap:6, marginBottom:10 }}>
                   {!isEditing
-                    ? <button onClick={() => startEdit(session)} style={{ padding:"5px 12px", borderRadius:7, border:"1.5px solid " + MIST, background:"none", color:SLATE, fontSize:10, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN }}>Edit</button>
+                    ? <>
+                        <button onClick={() => startEdit(session)} style={{ padding:"5px 12px", borderRadius:7, border:"1.5px solid " + MIST, background:"none", color:SLATE, fontSize:10, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN }}>Edit</button>
+                        <button onClick={() => deleteSession(session)} style={{ padding:"5px 12px", borderRadius:7, border:"1.5px solid " + CORAL, background:"none", color:CORAL, fontSize:10, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN }}>Delete Session</button>
+                      </>
                     : <><button onClick={saveEdit} style={{ flex:1, padding:"7px 12px", borderRadius:7, border:"none", background:GREEN, color:WHITE, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:FONT_MAIN }}>Save Changes</button>
                         <button onClick={() => { setEditKey(null); setEditData(null); }} style={{ padding:"7px 12px", borderRadius:7, border:"1.5px solid " + MIST, background:"none", color:SLATE, fontSize:10, cursor:"pointer", fontFamily:FONT_MAIN }}>Cancel</button></>
                   }
@@ -1496,7 +1599,10 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
                   <div key={exIdx} style={{ marginBottom:10, padding:"8px 9px", background:FOG, borderRadius:9 }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
                       <div style={{ fontWeight:600, fontSize:11, color:INK }}>{exercise.name}</div>
-                      {isEditing ? <EquipChips selected={exercise.equipment} onChange={equip => updateEditEquip(exIdx, equip)} small/> : <span style={{ color:STONE, fontSize:9 }}>{exercise.equipment}</span>}
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        {isEditing && <button onClick={() => deleteExerciseFromEdit(exIdx)} style={{ background:"none", border:"none", color:CORAL, fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:FONT_MAIN }}>Remove</button>}
+                        {isEditing ? <EquipChips selected={exercise.equipment} onChange={equip => updateEditEquip(exIdx, equip)} small/> : <span style={{ color:STONE, fontSize:9 }}>{exercise.equipment}</span>}
+                      </div>
                     </div>
                     {isEditing && (
                       <div style={{ display:"grid", gridTemplateColumns:"18px 1fr 1fr", gap:3, marginBottom:4 }}>
@@ -1508,7 +1614,7 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
                         isEditing ? (
                           <div key={setIdx} style={{ display:"grid", gridTemplateColumns:"18px 1fr 1fr", gap:3, alignItems:"center" }}>
                             <div style={{ fontFamily:FONT_MONO, fontSize:10, color:PEBBLE, textAlign:"center" }}>S{setIdx+1}</div>
-                            <input type="number" inputMode="decimal" value={setItem.weight} onChange={event => updateEditSet(exIdx, setIdx, "weight", event.target.value)} style={{ padding:"6px 4px", borderRadius:5, border:"1.5px solid " + MIST, background:WHITE, fontFamily:FONT_MONO, fontSize:13, fontWeight:500, color:INK, textAlign:"center", outline:"none", width:"100%" }}/>
+                            <input type="text" inputMode="decimal" value={setItem.weight} onChange={event => updateEditSet(exIdx, setIdx, "weight", event.target.value)} style={{ padding:"6px 4px", borderRadius:5, border:"1.5px solid " + MIST, background:WHITE, fontFamily:FONT_MONO, fontSize:13, fontWeight:500, color:INK, textAlign:"center", outline:"none", width:"100%" }}/>
                             <input type="number" inputMode="numeric" value={setItem.reps} onChange={event => updateEditSet(exIdx, setIdx, "reps", event.target.value)} style={{ padding:"6px 4px", borderRadius:5, border:"1.5px solid " + MIST, background:WHITE, fontFamily:FONT_MONO, fontSize:13, fontWeight:500, color:INK, textAlign:"center", outline:"none", width:"100%" }}/>
                           </div>
                         ) : (
@@ -1578,13 +1684,21 @@ function HistoryTab({ sessions, saveSessions, showToast }) {
 }
 
 // --- PLAN TAB -----------------------------------------------------------------
-function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
+function PlanTab({ plans, activePlanName, onSavePlans, showToast, customExercises }) {
   const [selectedPlan, setSelectedPlan] = useState(activePlanName);
   const [localPlans, setLocalPlans] = useState(() => JSON.parse(JSON.stringify(plans)));
   const [editMode, setEditMode] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
   const [newPlanName, setNewPlanName] = useState("");
+  const [planPickerIdx, setPlanPickerIdx] = useState(null);
+  const [planPickerDay, setPlanPickerDay] = useState(null);
+  const [planPickerSearch, setPlanPickerSearch] = useState("");
+
+  const allExerciseOptions = [
+    ...Object.keys(MUSCLE_MAP),
+    ...Object.keys(customExercises || {}),
+  ].filter((name, idx, arr) => arr.indexOf(name) === idx).sort();
 
   useEffect(() => {
     if (!localPlans[selectedPlan]) setSelectedPlan(Object.keys(localPlans)[0]);
@@ -1619,7 +1733,7 @@ function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
     const current = exercises[idx].supersetGroup || null;
     const existing = [...new Set(exercises.map(item => item.supersetGroup).filter(Boolean))];
     const maxGroup = existing.length > 0 ? Math.max(...existing) : 0;
-    exercises[idx].supersetGroup = current === null ? 1 : current >= Math.min(maxGroup + 1, 3) ? null : current + 1;
+    exercises[idx].supersetGroup = current === null ? 1 : current >= Math.min(maxGroup + 1, 4) ? null : current + 1;
   });
   const addDay = () => mutate(state => {
     const dayName = `Day ${Object.keys(state[selectedPlan].days).length + 1}`;
@@ -1694,10 +1808,10 @@ function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
                     )}
                     <div style={{ flex:1, minWidth:0 }}>
                       {editMode
-                        ? <input value={exercise.name} onChange={event => updateName(dayName, idx, event.target.value)} style={{ width:"100%", border:"none", outline:"none", background:"transparent", fontFamily:FONT_MAIN, fontSize:12, fontWeight:600, color:INK, marginBottom:4 }}/>
+                        ? <button onClick={() => { setPlanPickerIdx(idx); setPlanPickerDay(dayName); setPlanPickerSearch(exercise.name); }} style={{ width:"100%", border:"none", outline:"none", background:FOG, fontFamily:FONT_MAIN, fontSize:12, fontWeight:600, color:exercise.name ? INK : STONE, marginBottom:4, padding:"5px 8px", borderRadius:6, cursor:"pointer", textAlign:"left", border:`1px solid ${MIST}` }}>{exercise.name || "Tap to choose..."}</button>
                         : <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:3 }}>
                             <span style={{ fontSize:12, fontWeight:600, color:INK }}>{exercise.name}</span>
-                            {groupNum && <span style={{ fontSize:8, fontWeight:800, color:ssCol.text, background:ssCol.bg, padding:"1px 5px", borderRadius:3, border:`1px solid ${ssCol.border}` }}>SS {["A","B","C"][groupNum-1]}</span>}
+                            {groupNum && <span style={{ fontSize:8, fontWeight:800, color:ssCol.text, background:ssCol.bg, padding:"1px 5px", borderRadius:3, border:`1px solid ${ssCol.border}` }}>SS {["A","B","C","D"][groupNum-1]}</span>}
                           </div>
                       }
                       {editMode && <EquipChips selected={exercise.equipment} onChange={equip => updateEquip(dayName, idx, equip)} small/>}
@@ -1718,7 +1832,7 @@ function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
                       <div style={{ display:"flex", flexDirection:"column", gap:3, flexShrink:0 }}>
                         <button onClick={() => cycleSS(dayName, idx)} title="Cycle: none -> SS A -> SS B -> SS C -> none"
                           style={{ fontSize:7, fontWeight:800, padding:"2px 5px", borderRadius:4, border:`1px solid ${ssCol ? ssCol.border : MIST}`, background:ssCol ? ssCol.bg : "none", color:ssCol ? ssCol.text : STONE, cursor:"pointer", fontFamily:FONT_MAIN, minWidth:26, textAlign:"center" }}>
-                          {groupNum ? `SS ${["A","B","C"][groupNum-1]}` : "SS"}
+                          {groupNum ? `SS ${["A","B","C","D"][groupNum-1]}` : "SS"}
                         </button>
                         <button onClick={() => removeExercise(dayName, idx)} style={{ background:"none", border:"none", color:STONE, fontSize:14, cursor:"pointer", padding:0, lineHeight:1 }}>x</button>
                       </div>
@@ -1727,7 +1841,7 @@ function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
                   {showConnector && (
                     <div style={{ display:"flex", alignItems:"center", marginLeft:editMode ? 36 : 10, marginBottom:2 }}>
                       <div style={{ width:2, height:7, background:ssCol.border, borderRadius:1, marginRight:4 }}/>
-                      <span style={{ fontSize:8, color:ssCol.text, fontWeight:700 }}>Superset {["A","B","C"][groupNum-1]}</span>
+                      <span style={{ fontSize:8, color:ssCol.text, fontWeight:700 }}>Superset {["A","B","C","D"][groupNum-1]}</span>
                     </div>
                   )}
                 </div>
@@ -1783,6 +1897,18 @@ function PlanTab({ plans, activePlanName, onSavePlans, showToast }) {
           </div>
         </div>
       )}
+
+      {/* Exercise picker for plan editing */}
+      {planPickerIdx !== null && planPickerDay !== null && (
+        <ExercisePickerModal
+          options={allExerciseOptions}
+          search={planPickerSearch}
+          setSearch={setPlanPickerSearch}
+          onSelect={(name) => { updateName(planPickerDay, planPickerIdx, name); setPlanPickerIdx(null); setPlanPickerDay(null); setPlanPickerSearch(""); }}
+          onClose={() => { setPlanPickerIdx(null); setPlanPickerDay(null); setPlanPickerSearch(""); }}
+          customExercises={customExercises}
+        />
+      )}
     </div>
   );
 }
@@ -1806,18 +1932,39 @@ function PlanPickerModal({ plans, activePlanName, onSelect, onClose }) {
 }
 
 // --- SETTINGS MODAL -----------------------------------------------------------
-function SettingsModal({ goals, bodyweight, onClose }) {
+function SettingsModal({ goals, bodyweight, customExercises, onClose }) {
   const [localGoals, setLocalGoals] = useState({ ...goals });
   const [localBW, setLocalBW] = useState(String(bodyweight));
+  const [localCustom, setLocalCustom] = useState(JSON.parse(JSON.stringify(customExercises || {})));
+  const [newExName, setNewExName] = useState("");
+  const [newExMuscles, setNewExMuscles] = useState({});
+  const [showAddEx, setShowAddEx] = useState(false);
 
   const updateGoal = (muscle, value) => {
     const num = parseInt(value);
     setLocalGoals(prev => ({ ...prev, [muscle]: isNaN(num) ? prev[muscle] : Math.max(1, num) }));
   };
 
+  const addCustomExercise = () => {
+    if (!newExName.trim()) return;
+    const contributions = {};
+    Object.entries(newExMuscles).forEach(([muscle, val]) => {
+      const num = parseFloat(val);
+      if (!isNaN(num) && num > 0) contributions[muscle] = Math.min(1, num);
+    });
+    setLocalCustom(prev => ({ ...prev, [newExName.trim()]: contributions }));
+    setNewExName("");
+    setNewExMuscles({});
+    setShowAddEx(false);
+  };
+
+  const removeCustomExercise = (name) => {
+    setLocalCustom(prev => { const next = { ...prev }; delete next[name]; return next; });
+  };
+
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:300, display:"flex", alignItems:"flex-end" }} onClick={event => event.target === event.currentTarget && onClose(localGoals, parseFloat(localBW) || bodyweight)}>
-      <div style={{ background:WHITE, borderRadius:"16px 16px 0 0", width:"100%", padding:"20px 16px 40px", maxHeight:"85vh", overflowY:"auto" }}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:300, display:"flex", alignItems:"flex-end" }} onClick={event => event.target === event.currentTarget && onClose(localGoals, parseFloat(localBW) || bodyweight, localCustom)}>
+      <div style={{ background:WHITE, borderRadius:"16px 16px 0 0", width:"100%", padding:"20px 16px 40px", maxHeight:"90vh", overflowY:"auto" }}>
         <div style={{ width:32, height:4, background:MIST, borderRadius:2, margin:"0 auto 16px" }}/>
         <div style={{ fontWeight:800, fontSize:19, marginBottom:14 }}>Settings</div>
 
@@ -1832,10 +1979,10 @@ function SettingsModal({ goals, bodyweight, onClose }) {
           </div>
         </div>
 
-        {/* Volume goals - single number */}
+        {/* Volume goals */}
         <div style={{ fontWeight:700, fontSize:12, color:INK, marginBottom:2 }}>Weekly Sets Goal per Muscle</div>
         <div style={{ fontSize:10, color:STONE, marginBottom:14 }}>Based on hypertrophy research (Schoenfeld et al)</div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:20 }}>
           {MUSCLES.map(muscle => (
             <div key={muscle} style={{ padding:"10px 12px", background:FOG, borderRadius:10 }}>
               <div style={{ fontWeight:600, fontSize:11, color:INK, marginBottom:6 }}>{MUSCLE_LABEL[muscle]}</div>
@@ -1848,8 +1995,52 @@ function SettingsModal({ goals, bodyweight, onClose }) {
           ))}
         </div>
 
-        <button onClick={() => onClose(localGoals, parseFloat(localBW) || bodyweight)}
-          style={{ width:"100%", padding:"13px", borderRadius:11, border:"none", background:`linear-gradient(135deg,${BLUEDARK},${BLUE})`, color:WHITE, fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, cursor:"pointer", marginTop:16 }}>
+        {/* Custom exercises */}
+        <div style={{ fontWeight:700, fontSize:12, color:INK, marginBottom:2 }}>Custom Exercises</div>
+        <div style={{ fontSize:10, color:STONE, marginBottom:12 }}>Add exercises not in the default list with their muscle contributions</div>
+
+        {Object.entries(localCustom).map(([name, contributions]) => (
+          <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"9px 12px", background:FOG, borderRadius:9, marginBottom:6 }}>
+            <div>
+              <div style={{ fontWeight:600, fontSize:12, color:INK }}>{name}</div>
+              <div style={{ fontSize:9, color:STONE }}>
+                {Object.entries(contributions).map(([muscle, factor]) => `${MUSCLE_LABEL[muscle]} ${factor}`).join(", ") || "No muscle data"}
+              </div>
+            </div>
+            <button onClick={() => removeCustomExercise(name)} style={{ background:"none", border:"none", color:CORAL, fontSize:18, cursor:"pointer", padding:"0 4px" }}>x</button>
+          </div>
+        ))}
+
+        {!showAddEx ? (
+          <button onClick={() => setShowAddEx(true)} style={{ width:"100%", padding:"11px", borderRadius:10, border:`1.5px dashed ${AMBER}`, background:"none", color:AMBER, fontFamily:FONT_MAIN, fontSize:12, fontWeight:600, cursor:"pointer", marginBottom:16 }}>
+            + Add Custom Exercise
+          </button>
+        ) : (
+          <div style={{ padding:"14px", background:FOG, borderRadius:12, marginBottom:16, border:`1px solid ${MIST}` }}>
+            <div style={{ fontWeight:600, fontSize:12, color:INK, marginBottom:10 }}>New Exercise</div>
+            <input value={newExName} onChange={event => setNewExName(event.target.value)} placeholder="Exercise name (e.g. Cable Fly)"
+              style={{ width:"100%", padding:"9px 12px", borderRadius:8, border:`1.5px solid ${BLUE}`, fontFamily:FONT_MAIN, fontSize:13, color:INK, outline:"none", marginBottom:12 }}/>
+            <div style={{ fontSize:10, color:STONE, marginBottom:8 }}>Muscle contributions (0.1 to 1.0 — e.g. 1.0 = primary, 0.5 = secondary)</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:12 }}>
+              {MUSCLES.map(muscle => (
+                <div key={muscle} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 8px", background:WHITE, borderRadius:7 }}>
+                  <span style={{ fontSize:10, color:SLATE, flex:1 }}>{MUSCLE_LABEL[muscle]}</span>
+                  <input type="number" value={newExMuscles[muscle] || ""} placeholder="0"
+                    onChange={event => setNewExMuscles(prev => ({ ...prev, [muscle]: event.target.value }))}
+                    onFocus={event => event.target.select()}
+                    style={{ width:44, padding:"4px 4px", borderRadius:5, border:`1px solid ${MIST}`, fontFamily:FONT_MONO, fontSize:12, fontWeight:600, color:BLUE, textAlign:"center", outline:"none" }}/>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={addCustomExercise} disabled={!newExName.trim()} style={{ flex:1, padding:"10px", borderRadius:9, border:"none", background:newExName.trim() ? INK : PEBBLE, color:WHITE, fontFamily:FONT_MAIN, fontSize:12, fontWeight:700, cursor:newExName.trim() ? "pointer" : "default" }}>Save Exercise</button>
+              <button onClick={() => { setShowAddEx(false); setNewExName(""); setNewExMuscles({}); }} style={{ padding:"10px 14px", borderRadius:9, border:`1px solid ${MIST}`, background:"none", color:SLATE, fontSize:11, cursor:"pointer", fontFamily:FONT_MAIN }}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        <button onClick={() => onClose(localGoals, parseFloat(localBW) || bodyweight, localCustom)}
+          style={{ width:"100%", padding:"13px", borderRadius:11, border:"none", background:`linear-gradient(135deg,${BLUEDARK},${BLUE})`, color:WHITE, fontFamily:FONT_MAIN, fontSize:13, fontWeight:700, cursor:"pointer", marginTop:4 }}>
           Save Settings
         </button>
       </div>
